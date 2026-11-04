@@ -1,0 +1,5 @@
+/.env
+
+# JetBrains IDEs
+.idea/
+*.iml
