@@ -46,65 +46,26 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
-            "name": "click",
-            "description": "Click an element.",
+            "name": "execute_steps",
+            "description": "Run element actions in order, such as filling a form and submitting it. click and press can only be the last step, because they may change the page.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "element_index": {"type": "integer", "description": "The [index] of an element from the last observation."},
+                    "steps": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "action": {"type": "string", "enum": ["click", "fill", "select", "press"]},
+                                "element_index": {"type": "integer", "description": "The [index] of an element from the last observation."},
+                                "value": {"type": ["string", "null"], "description": "Text for fill, option label for select, key for press, null for click."},
+                            },
+                            "required": ["action", "element_index", "value"],
+                            "additionalProperties": False,
+                        },
+                    },
                 },
-                "required": ["element_index"],
-                "additionalProperties": False,
-            },
-            "strict": True,
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "fill",
-            "description": "Replace the text in an input with a value.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "element_index": {"type": "integer", "description": "The [index] of an element from the last observation."},
-                    "value": {"type": "string"},
-                },
-                "required": ["element_index", "value"],
-                "additionalProperties": False,
-            },
-            "strict": True,
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "select",
-            "description": "Choose an option in a dropdown by typing its label.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "element_index": {"type": "integer", "description": "The [index] of an element from the last observation."},
-                    "value": {"type": "string"},
-                },
-                "required": ["element_index", "value"],
-                "additionalProperties": False,
-            },
-            "strict": True,
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "press",
-            "description": "Press a key such as Enter or Ctrl+A on an element.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "element_index": {"type": "integer", "description": "The [index] of an element from the last observation."},
-                    "key": {"type": "string"},
-                },
-                "required": ["element_index", "key"],
+                "required": ["steps"],
                 "additionalProperties": False,
             },
             "strict": True,

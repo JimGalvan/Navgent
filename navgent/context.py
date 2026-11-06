@@ -4,5 +4,5 @@ from navgent.browser.browser_session import BrowserSession
 
 
 @dataclass(frozen=True)
-class AgentContext:
+class ToolContext:
     browser_session: BrowserSession

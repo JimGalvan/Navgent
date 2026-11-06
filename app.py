@@ -3,10 +3,11 @@ import json
 
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
+from openai.types.chat import ChatCompletionMessage, ChatCompletionMessageToolCall
 
 from navgent.browser.browser_manager import BrowserManager
 from navgent.browser.browser_session import BrowserSession
-from navgent.context import AgentContext
+from navgent.context import ToolContext
 from navgent.tool_schemas import TOOL_SCHEMAS
 from navgent.tools import TOOLS
 
@@ -19,12 +20,30 @@ When the task is finished, reply with your answer instead of calling a tool.
 """
 
 
+async def ask_model(client: AsyncOpenAI, messages: list) -> ChatCompletionMessage:
+    response = await client.chat.completions.create(
+        model=MODEL, messages=messages, tools=TOOL_SCHEMAS
+    )
+    return response.choices[0].message
+
+
+async def execute_tool_call(context: ToolContext, call: ChatCompletionMessageToolCall) -> str:
+    print(call.function.name, call.function.arguments)
+    tool = TOOLS[call.function.name]
+    arguments = json.loads(call.function.arguments)
+    return await tool(context, **arguments)
+
+
+def result_to_message(call: ChatCompletionMessageToolCall, output: str) -> dict:
+    return {"role": "tool", "tool_call_id": call.id, "content": output}
+
+
 async def run(task: str) -> str | None:
     load_dotenv()
     client = AsyncOpenAI()
     browser_manager = BrowserManager(headless=False)
     browser_session = BrowserSession(browser_manager)
-    context = AgentContext(browser_session=browser_session)
+    context = ToolContext(browser_session=browser_session)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": task},
@@ -32,24 +51,15 @@ async def run(task: str) -> str | None:
 
     try:
         for _ in range(MAX_STEPS):
-            response = await client.chat.completions.create(
-                model=MODEL, messages=messages, tools=TOOL_SCHEMAS
-            )
-            message = response.choices[0].message
+            message = await ask_model(client, messages)
             messages.append(message)
             if not message.tool_calls:
                 return message.content
 
             for call in message.tool_calls:
-                print(call.function.name, call.function.arguments)
-                tool = TOOLS[call.function.name]
-                arguments = json.loads(call.function.arguments)
-                output = await tool(context, **arguments)
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": call.id,
-                    "content": output,
-                })
+                output = await execute_tool_call(context, call)
+                message = result_to_message(call, output)
+                messages.append(message)
         return None
     finally:
         await browser_session.close()
