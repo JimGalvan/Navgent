@@ -5,6 +5,7 @@ BROWSER_LAUNCH_ARGS = ["--disable-blink-features=AutomationControlled"]
 VIEWPORT_WIDTH = 1365
 VIEWPORT_HEIGHT = 768
 OBSERVE_ATTEMPTS = 3
+PAGE_TEXT_CHARACTER_LIMIT = 8_000
 
 KEY_ALIASES = {
     "ctrl": "Control",

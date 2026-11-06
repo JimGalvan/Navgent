@@ -6,7 +6,9 @@ from openai import AsyncOpenAI
 
 from navgent.browser.browser_manager import BrowserManager
 from navgent.browser.browser_session import BrowserSession
-from navgent.tools import TOOL_SCHEMAS, TOOLS
+from navgent.context import AgentContext
+from navgent.tool_schemas import TOOL_SCHEMAS
+from navgent.tools import TOOLS
 
 MODEL = "gpt-4.1-mini"
 MAX_STEPS = 3
@@ -22,6 +24,7 @@ async def run(task: str) -> str | None:
     client = AsyncOpenAI()
     browser_manager = BrowserManager(headless=False)
     browser_session = BrowserSession(browser_manager)
+    context = AgentContext(browser_session=browser_session)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": task},
@@ -41,7 +44,7 @@ async def run(task: str) -> str | None:
                 print(call.function.name, call.function.arguments)
                 tool = TOOLS[call.function.name]
                 arguments = json.loads(call.function.arguments)
-                output = await tool(browser_session, **arguments)
+                output = await tool(context, **arguments)
                 messages.append({
                     "role": "tool",
                     "tool_call_id": call.id,
