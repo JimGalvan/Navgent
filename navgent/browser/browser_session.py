@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-from collections import Counter
 from functools import cache
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -11,7 +10,7 @@ from playwright.async_api import Frame as PlaywrightFrame
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from navgent.browser.browser_manager import BrowserManager
-from navgent.browser.browser_utils import BrowserUtils, evaluate_with_timeout, normalize_key
+from navgent.browser.browser_utils import evaluate_with_timeout, get_js_script, normalize_key
 from navgent.browser.constants import (
     LOAD_TIMEOUT_MS,
     OBSERVE_ATTEMPTS,
@@ -59,7 +58,7 @@ class BrowserSession:
     @staticmethod
     @cache
     def _get_script(name: str) -> str:
-        return BrowserUtils.get_js_script(name)
+        return get_js_script(name)
 
     async def _ensure_context(self) -> BrowserContext:
         if self._context is None:
@@ -200,15 +199,6 @@ class BrowserSession:
                 self._reset_page_state(self._page)
         raise RuntimeError("The page kept navigating and could not be observed")
 
-    async def _capture_page_snapshot(self) -> Counter:
-        try:
-            text = await evaluate_with_timeout(
-                self.page, self._get_script("capture-page-snapshot.js")
-            )
-        except Exception:
-            return Counter()
-        return Counter(line.strip() for line in text.splitlines() if line.strip())
-
     async def _observe_current_page(self) -> Observation:
         result = json.loads(await self._scan_page())
         self._elements = [
@@ -221,7 +211,6 @@ class BrowserSession:
         tabs = await self._collect_tabs()
         frames = self._collect_iframes()
         page_content = await PageContent.get_page_content(self._page, char_budget=400)
-        page_snapshot = await self._capture_page_snapshot()
         described_frames = "\n".join(str(frame) for frame in frames)
         page_state = (
             f"{interactable_elements}\n"
@@ -229,7 +218,7 @@ class BrowserSession:
             f"<available-tabs>{tabs}</available-tabs>\n"
             f"<available-iframes>\n{described_frames}\n</available-iframes>"
         )
-        return Observation(page_state=page_state, page_snapshot=page_snapshot)
+        return Observation(page_state=page_state)
 
     def _get_stored_element(self, element_index: int) -> Element | None:
         if 0 <= element_index < len(self._elements):

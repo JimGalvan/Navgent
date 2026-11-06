@@ -1,15 +1,7 @@
 import html
 import re
 
-MAX_PAGE_TEXT_CHARS = 3_000
 MAX_ELEMENTS = 100
-
-
-def truncate(text: str, max_chars: int) -> tuple[str, bool]:
-    if len(text) <= max_chars:
-        return text, False
-
-    return text[:max_chars].rstrip(), True
 
 
 def normalize_page_text(text: str) -> str:
