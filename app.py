@@ -27,10 +27,10 @@ async def ask_model(client: AsyncOpenAI, messages: list) -> ChatCompletionMessag
     return response.choices[0].message
 
 
-async def execute_tool_call(context: ToolContext, call: ChatCompletionMessageToolCall) -> str:
-    print(call.function.name, call.function.arguments)
-    tool = TOOLS[call.function.name]
-    arguments = json.loads(call.function.arguments)
+async def execute_tool_call(context: ToolContext, tool_call: ChatCompletionMessageToolCall) -> str:
+    print(tool_call.function.name, tool_call.function.arguments)
+    tool = TOOLS[tool_call.function.name]
+    arguments = json.loads(tool_call.function.arguments)
     return await tool(context, **arguments)
 
 
@@ -56,9 +56,9 @@ async def run(task: str) -> str | None:
             if not message.tool_calls:
                 return message.content
 
-            for call in message.tool_calls:
-                output = await execute_tool_call(context, call)
-                message = result_to_message(call, output)
+            for tool_call in message.tool_calls:
+                output = await execute_tool_call(context, tool_call)
+                message = result_to_message(tool_call, output)
                 messages.append(message)
         return None
     finally:
