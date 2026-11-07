@@ -7,6 +7,31 @@ from navgent.browser.constants import MAX_ELEMENTS
 
 
 @dataclass
+class Bounds:
+    x: float
+    y: float
+    width: float
+    height: float
+    top: float
+    right: float
+    bottom: float
+    left: float
+
+
+@dataclass
+class Viewport:
+    width: int
+    height: int
+
+    def check_if_on_screen(self, bounds: Bounds) -> bool:
+        is_above = bounds.bottom <= 0
+        is_below = bounds.top >= self.height
+        is_left = bounds.right <= 0
+        is_right = bounds.left >= self.width
+        return not (is_above or is_below or is_left or is_right)
+
+
+@dataclass
 class Element:
     index: int
     signature: str
@@ -15,6 +40,7 @@ class Element:
     attrs: str
     cx: float
     cy: float
+    element_bounds: Bounds
 
 
 @dataclass
@@ -74,6 +100,7 @@ class Observation:
     page_content: str
     tabs: list[Tab]
     iframes: list[Iframe]
+    elements_outside_viewport_count: int = 0
 
     def __str__(self) -> str:
         # Hide the query string and escape page details
@@ -104,6 +131,11 @@ class Observation:
             formatted_elements.append(f"... {omitted_count} additional elements omitted")
 
         elements = "\n".join(formatted_elements) if formatted_elements else "(none)"
+        if self.elements_outside_viewport_count:
+            elements += (
+                f"\n({self.elements_outside_viewport_count} more elements outside the screen, "
+                "use 'scroll' to reach them)"
+            )
 
         tab_lines = []
         for tab in self.tabs:
@@ -118,7 +150,7 @@ class Observation:
         sections = [
             f'<page url="{url}" title="{title}" pages_below="{self.pages_below:.1f}">\n\n'
             f"Interactive elements:\n{elements}\n\n</page>",
-            f"<page-content>{self.page_content}</page-content>",
+            f"<viewport-text>{self.page_content}</viewport-text>",
             f"<available-tabs>\n{tabs}\n</available-tabs>",
         ]
         has_only_main_frame = len(self.iframes) <= 1

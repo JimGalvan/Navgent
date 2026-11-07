@@ -1,9 +1,10 @@
 import json
 import re
 
-from playwright.async_api import Page
+from playwright.async_api import Frame, Page
 
 from navgent.browser.browser_utils import evaluate_with_timeout, get_js_script
+from navgent.browser.models import Bounds, Viewport
 
 WHITESPACE = re.compile(r"\s+")
 NGRAM_SIZE = 5
@@ -127,8 +128,7 @@ def describe_scroll(pages_below: float) -> str:
     if pages_below <= SCROLL_HINT_MIN_PAGES:
         return ""
     return (
-        f"[{pages_below:.1f} pages below the screen. This text covers the whole page, "
-        "but only on-screen elements are listed; scroll down to reach the rest.]\n"
+        f"[{pages_below:.1f} pages below the screen. use 'scroll' tool to scroll down]\n"
     )
 
 
@@ -139,7 +139,20 @@ def frame_label(indexes: list[int]) -> str:
     return label
 
 
-async def scan_frames(page: Page) -> tuple[dict[int, str], dict[int, float]]:
+def get_text_in_viewport(scan_result: dict) -> str:
+    viewport = Viewport(**scan_result["viewport"])
+    texts = []
+    for block in scan_result["textBlocks"]:
+        bounds = Bounds(**block["boundingRectangle"])
+        is_on_screen = viewport.check_if_on_screen(bounds)
+        if is_on_screen:
+            texts.append(block["text"])
+    return " ".join(texts)
+
+
+async def scan_frames(
+    page: Page, scanned_frame: Frame, scanned_result: dict
+) -> tuple[dict[int, str], dict[int, float]]:
     """Return each frame's text and how many screens of it are below the fold."""
     frame_texts: dict[int, str] = {}
     pages_below_by_frame: dict[int, float] = {}
@@ -148,14 +161,17 @@ async def scan_frames(page: Page) -> tuple[dict[int, str], dict[int, float]]:
     for index, frame in enumerate(page.frames):
         if frame.is_detached():
             continue
-        try:
-            scan_json = await evaluate_with_timeout(frame, scan_script)
-        except TimeoutError:
-            frame_texts[index] = TIMED_OUT_FRAME_TEXT
-            continue
 
-        scan_result = json.loads(scan_json)
-        frame_texts[index] = scan_result["pageText"]
+        if frame is scanned_frame:
+            scan_result = scanned_result
+        else:
+            try:
+                scan_result = json.loads(await evaluate_with_timeout(frame, scan_script))
+            except TimeoutError:
+                frame_texts[index] = TIMED_OUT_FRAME_TEXT
+                continue
+
+        frame_texts[index] = get_text_in_viewport(scan_result)
         pages_below_by_frame[index] = float(scan_result.get("pagesBelow", 0))
 
     return frame_texts, pages_below_by_frame
@@ -163,8 +179,10 @@ async def scan_frames(page: Page) -> tuple[dict[int, str], dict[int, float]]:
 
 class PageContent:
     @staticmethod
-    async def get_page_content(page: Page, char_budget: int = 500) -> str:
-        frame_texts, pages_below_by_frame = await scan_frames(page)
+    async def get_page_content(
+        page: Page, scanned_frame: Frame, scanned_result: dict, char_budget: int = 500
+    ) -> str:
+        frame_texts, pages_below_by_frame = await scan_frames(page, scanned_frame, scanned_result)
 
         filled_groups = []
         empty_indexes = []

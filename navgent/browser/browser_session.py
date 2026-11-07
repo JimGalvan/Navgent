@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 from playwright.async_api import BrowserContext, Page
 from playwright.async_api import Frame as PlaywrightFrame
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+from wcwidth import width
 
 from navgent.browser.browser_manager import BrowserManager
 from navgent.browser.browser_utils import evaluate_with_timeout, get_js_script, normalize_key
@@ -18,7 +19,8 @@ from navgent.browser.constants import (
     VIEWPORT_HEIGHT,
     VIEWPORT_WIDTH,
 )
-from navgent.browser.models import Element, Iframe, Observation, Tab
+from navgent.browser.element_factory import ElementFactory
+from navgent.browser.models import Element, Iframe, Observation, Tab, Viewport
 from navgent.browser.page_content import PageContent
 from navgent.browser.target_registry import TargetRegistry
 
@@ -225,21 +227,35 @@ class BrowserSession:
             unique_elements.append(raw_element)
         return unique_elements
 
+    def _filter_outside_viewport(self, elements: list[Element], viewport: Viewport) -> list[Element]:
+        updated_list = []
+        for element in elements:
+            is_on_screen = viewport.check_if_on_screen(element.element_bounds)
+            if is_on_screen:
+                updated_list.append(element)
+        return updated_list
+
     async def _observe_current_page(self) -> Observation:
         scan_result = json.loads(await self._scan_page())
         unique_raw_elements = self._remove_duplicate_links(scan_result["elements"])
 
         elements = []
         for index, raw_element in enumerate(unique_raw_elements):
-            elements.append(Element(index=index, **raw_element))
-        self._elements = elements
+            elements.append(ElementFactory.create_element(index, raw_element))
+
+        viewport = Viewport(**scan_result["viewport"])
+        self._elements = self._filter_outside_viewport(elements, viewport)
+        for index, element in enumerate(self._elements):
+            element.index = index
+        elements_outside_viewport_count = len(elements) - len(self._elements)
 
         self._reconcile_current_page()
-
         url = self.page.url
         title = await self.page.title()
         pages_below = float(scan_result.get("pagesBelow", 0))
-        page_content = await PageContent.get_page_content(self._page, char_budget=500)
+        page_content = await PageContent.get_page_content(
+            self._page, self._active_frame(), scan_result, char_budget=500
+        )
         tabs = await self._collect_tabs()
         iframes = self._collect_iframes()
 
@@ -251,6 +267,7 @@ class BrowserSession:
             page_content=page_content,
             tabs=tabs,
             iframes=iframes,
+            elements_outside_viewport_count=elements_outside_viewport_count,
         )
 
     def _get_stored_element(self, element_index: int) -> Element | None:
@@ -258,10 +275,8 @@ class BrowserSession:
             return self._elements[element_index]
         return None
 
-    async def get_text_in_viewport(self) -> str:
-        return await evaluate_with_timeout(
-            self._active_frame(), self._get_script("get-text-in-viewport.js")
-        )
+    def has_element(self, element_index: int) -> bool:
+        return self._get_stored_element(element_index) is not None
 
     async def get_page_text(self) -> str:
         return await evaluate_with_timeout(
@@ -305,7 +320,7 @@ class BrowserSession:
         if element is None:
             return f"element [{element_index}]"
         opening_tag = f"{element.tag} {element.attrs}".strip()
-        return f"[{element_index}] <{opening_tag}> {element.text}".strip()
+        return f"<{opening_tag}> {element.text}".strip()
 
     async def _click_element(self, element_index: int) -> None:
         element = self._get_stored_element(element_index)

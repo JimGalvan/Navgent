@@ -47,6 +47,14 @@ async def execute_steps(context: ToolContext, steps: list[dict]) -> ToolResult[O
             observation = await session.attempt_observe_page()
             return ToolResult(tool_name="execute_steps", succeeded=False, history_record=message, output=observation)
 
+    for step in steps:
+        element_index = step["element_index"]
+        if not session.has_element(element_index):
+            message = ("Rejected: an element index was not in the latest observation, nothing was run. "
+                       "Scroll to bring the element on screen, then use an index from the new observation.")
+            observation = await session.attempt_observe_page()
+            return ToolResult(tool_name="execute_steps", succeeded=False, history_record=message, output=observation)
+
     previous_url = session.page.url
     messages = []
     for step in steps:
@@ -54,6 +62,7 @@ async def execute_steps(context: ToolContext, steps: list[dict]) -> ToolResult[O
         index = step["element_index"]
         value = step["value"]
 
+        message = None
         match action:
             case "click":
                 message = await session.click(index)
@@ -66,8 +75,10 @@ async def execute_steps(context: ToolContext, steps: list[dict]) -> ToolResult[O
             case _:
                 messages.append(f"Unknown action {action}")
                 observation = await session.attempt_observe_page()
-                return ToolResult(tool_name="execute_steps", succeeded=False, history_record="\n".join(messages), output=observation)
-        messages.append(message)
+                return ToolResult(tool_name="execute_steps", succeeded=False, history_record="\n".join(messages),
+                                  output=observation)
+        if message:
+            messages.append(message)
 
     current_url = await session.wait_for_page_to_settle()
     if current_url != previous_url:
@@ -91,14 +102,18 @@ async def scroll(context: ToolContext, direction: str) -> ToolResult[Observation
     return ToolResult(tool_name="scroll", succeeded=True, history_record=history_record, output=observation)
 
 
-async def switch_tab(context: ToolContext, tab_id: str) -> ToolResult[str]:
-    message = await context.browser_session.switch_tab(tab_id)
-    return ToolResult(tool_name="switch_tab", succeeded=True, history_record=message, output=message)
+async def switch_tab(context: ToolContext, tab_id: str) -> ToolResult[Observation]:
+    session = context.browser_session
+    message = await session.switch_tab(tab_id)
+    observation = await session.attempt_observe_page()
+    return ToolResult(tool_name="switch_tab", succeeded=True, history_record=message, output=observation)
 
 
-async def switch_frame(context: ToolContext, frame_id: str) -> ToolResult[str]:
-    message = await context.browser_session.switch_to_iframe(frame_id)
-    return ToolResult(tool_name="switch_frame", succeeded=True, history_record=message, output=message)
+async def switch_frame(context: ToolContext, frame_id: str) -> ToolResult[Observation]:
+    session = context.browser_session
+    message = await session.switch_to_iframe(frame_id)
+    observation = await session.attempt_observe_page()
+    return ToolResult(tool_name="switch_frame", succeeded=True, history_record=message, output=observation)
 
 
 TOOLS = {

@@ -75,7 +75,7 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "scroll",
-            "description": "Scroll the current page or frame by most of a screen and return the new page state. Use it when <page-content> says there is more below and the element you need is not listed.",
+            "description": "Scroll the current page or frame by most of a screen and return the new page state. Use it when <viewport-text> says there is more below and the element you need is not listed.",
             "parameters": {
                 "type": "object",
                 "properties": {
