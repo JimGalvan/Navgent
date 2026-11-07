@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import List
 
 
 @dataclass
@@ -10,11 +11,6 @@ class Element:
     attrs: str
     cx: float
     cy: float
-
-
-@dataclass
-class Observation:
-    page_state: str
 
 
 @dataclass
@@ -55,3 +51,14 @@ class Iframe:
         parts.append(f"url={url!r}")
 
         return " ".join(parts)
+
+
+@dataclass
+class Observation:
+    url: str
+    title: str
+    pages_below: float
+    elements: List[Element]
+    page_content: str
+    tabs: List[Tab]
+    iframes: List[Iframe]

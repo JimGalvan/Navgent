@@ -1,15 +1,16 @@
 from navgent.browser.constants import PAGE_TEXT_CHARACTER_LIMIT
+from navgent.browser.formatting import format_observation
 from navgent.context import ToolContext
 
 
 async def navigate(context: ToolContext, url: str) -> str:
     observation = await context.browser_session.attempt_navigate_and_observe(url)
-    return observation.page_state
+    return format_observation(observation)
 
 
 async def observe_page(context: ToolContext) -> str:
     observation = await context.browser_session.attempt_observe_page()
-    return observation.page_state
+    return format_observation(observation)
 
 
 async def read_page_text(context: ToolContext) -> str:

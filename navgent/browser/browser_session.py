@@ -18,7 +18,6 @@ from navgent.browser.constants import (
     VIEWPORT_HEIGHT,
     VIEWPORT_WIDTH,
 )
-from navgent.browser.formatting import format_scan_for_llm
 from navgent.browser.models import Element, Iframe, Observation, Tab
 from navgent.browser.page_content import PageContent
 from navgent.browser.target_registry import TargetRegistry
@@ -201,24 +200,29 @@ class BrowserSession:
 
     async def _observe_current_page(self) -> Observation:
         result = json.loads(await self._scan_page())
-        self._elements = [
-            Element(index=index, **raw_element)
-            for index, raw_element in enumerate(result["elements"])
-        ]
+        elements = []
+        for index, raw_element in enumerate(result["elements"]):
+            element = Element(index=index, **raw_element)
+            elements.append(element)
+        self._elements = elements
 
-        interactable_elements = format_scan_for_llm(result)
         self._reconcile_current_page()
-        tabs = await self._collect_tabs()
-        frames = self._collect_iframes()
+
+        url = self.page.url
+        title = await self.page.title()
+        pages_below = float(result.get("pagesBelow", 0))
         page_content = await PageContent.get_page_content(self._page, char_budget=400)
-        described_frames = "\n".join(str(frame) for frame in frames)
-        page_state = (
-            f"{interactable_elements}\n"
-            f"<page-content>{page_content}</page-content>\n"
-            f"<available-tabs>{tabs}</available-tabs>\n"
-            f"<available-iframes>\n{described_frames}\n</available-iframes>"
+        tabs = await self._collect_tabs()
+        iframes = self._collect_iframes()
+        return Observation(
+            url=url,
+            title=title,
+            pages_below=pages_below,
+            elements=self._elements,
+            page_content=page_content,
+            tabs=tabs,
+            iframes=iframes,
         )
-        return Observation(page_state=page_state)
 
     def _get_stored_element(self, element_index: int) -> Element | None:
         if 0 <= element_index < len(self._elements):

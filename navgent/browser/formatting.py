@@ -1,6 +1,8 @@
 import html
 import re
 
+from navgent.browser.models import Element, Observation
+
 MAX_ELEMENTS = 100
 
 
@@ -24,44 +26,43 @@ def hide_query_string(url: str) -> str:
     return f"{path}?..."
 
 
-def format_element(index: int, element: dict) -> str:
-    tag = element.get("tag", "").strip()
-    attrs = html.escape(element.get("attrs", "").strip(), quote=False)
-    text = html.escape(normalize_page_text(element.get("text", "")), quote=False)
+def format_element(element: Element) -> str:
+    tag = element.tag.strip()
+    attrs = html.escape(element.attrs.strip(), quote=False)
+    text = html.escape(normalize_page_text(element.text), quote=False)
 
     opening_tag = f"{tag} {attrs}".strip()
 
     if text:
-        return f"[{index}] <{opening_tag}> {text}"
+        return f"[{element.index}] <{opening_tag}> {text}"
 
-    return f"[{index}] <{opening_tag}>"
+    return f"[{element.index}] <{opening_tag}>"
 
 
-def format_scan_for_llm(scan: dict) -> str:
-    url = html.escape(hide_query_string(scan.get("url", "")), quote=True)
-    title = html.escape(scan.get("title", ""), quote=True)
-    pages_below = float(scan.get("pagesBelow", 0))
-
-    elements = scan.get("elements", [])
+def format_elements(elements: list[Element]) -> str:
     shown_elements = elements[:MAX_ELEMENTS]
     omitted_count = len(elements) - len(shown_elements)
 
-    lines = [
-        f'<page url="{url}" title="{title}" pages_below="{pages_below:.1f}">',
-        "",
-        "Interactive elements:",
-    ]
-
     if not shown_elements:
-        lines.append("(none)")
-    else:
-        for index, element in enumerate(shown_elements):
-            lines.append(format_element(index, element))
+        return "(none)"
 
-        if omitted_count:
-            lines.append(f"... {omitted_count} additional elements omitted")
-
-    lines.append("")
-    lines.append("</page>")
-
+    lines = [format_element(element) for element in shown_elements]
+    if omitted_count:
+        lines.append(f"... {omitted_count} additional elements omitted")
     return "\n".join(lines)
+
+
+def format_observation(observation: Observation) -> str:
+    url = html.escape(hide_query_string(observation.url), quote=True)
+    title = html.escape(observation.title, quote=True)
+    pages_below = f"{observation.pages_below:.1f}"
+    elements = format_elements(observation.elements)
+    iframes = "\n".join(str(iframe) for iframe in observation.iframes)
+
+    return (
+        f'<page url="{url}" title="{title}" pages_below="{pages_below}">\n\n'
+        f"Interactive elements:\n{elements}\n\n</page>\n"
+        f"<page-content>{observation.page_content}</page-content>\n"
+        f"<available-tabs>{observation.tabs}</available-tabs>\n"
+        f"<available-iframes>\n{iframes}\n</available-iframes>"
+    )
