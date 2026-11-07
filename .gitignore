@@ -3,3 +3,4 @@
 # JetBrains IDEs
 .idea/
 *.iml
+/logs/
