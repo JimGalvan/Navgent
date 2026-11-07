@@ -214,6 +214,7 @@ class BrowserSession:
         page_content = await PageContent.get_page_content(self._page, char_budget=400)
         tabs = await self._collect_tabs()
         iframes = self._collect_iframes()
+
         return Observation(
             url=url,
             title=title,
