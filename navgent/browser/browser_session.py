@@ -205,8 +205,20 @@ class BrowserSession:
     async def _observe_current_page(self) -> Observation:
         result = json.loads(await self._scan_page())
         elements = []
-        for index, raw_element in enumerate(result["elements"]):
-            element = Element(index=index, **raw_element)
+        seen_links = set()
+        for raw_element in result["elements"]:
+            href = ""
+            for attribute in raw_element["attrs"].split():
+                if attribute.startswith("href="):
+                    href = attribute
+            is_link = raw_element["tag"] == "a" and bool(href)
+            link_key = (raw_element["text"], href)
+            if is_link and link_key in seen_links:
+                continue
+            if is_link:
+                seen_links.add(link_key)
+
+            element = Element(index=len(elements), **raw_element)
             elements.append(element)
         self._elements = elements
 
@@ -215,7 +227,7 @@ class BrowserSession:
         url = self.page.url
         title = await self.page.title()
         pages_below = float(result.get("pagesBelow", 0))
-        page_content = await PageContent.get_page_content(self._page, char_budget=400)
+        page_content = await PageContent.get_page_content(self._page, char_budget=2_000)
         tabs = await self._collect_tabs()
         iframes = self._collect_iframes()
 
@@ -273,6 +285,13 @@ class BrowserSession:
             bounding_box["y"] + border["vertical"] + vertical,
         )
 
+    def _describe_element(self, element_index: int) -> str:
+        element = self._get_stored_element(element_index)
+        if element is None:
+            return f"element [{element_index}]"
+        opening_tag = f"{element.tag} {element.attrs}".strip()
+        return f"[{element_index}] <{opening_tag}> {element.text}".strip()
+
     async def _click_element(self, element_index: int) -> None:
         element = self._get_stored_element(element_index)
         if element is None:
@@ -283,25 +302,25 @@ class BrowserSession:
 
     async def click(self, element_index: int) -> str:
         await self._click_element(element_index)
-        return f"Clicked element [{element_index}]"
+        return f"Clicked {self._describe_element(element_index)}"
 
     async def fill(self, element_index: int, value: str) -> str:
         await self._click_element(element_index)
         await self.page.keyboard.press("Control+A")
         await self.page.keyboard.insert_text(value)
-        return f"Filled element [{element_index}]"
+        return f"Filled {self._describe_element(element_index)}"
 
     async def select(self, element_index: int, value: str) -> str:
         await self._click_element(element_index)
         await self.page.keyboard.type(value)
         await self.page.keyboard.press("Enter")
-        return f"Selected an option in element [{element_index}]"
+        return f"Selected {value!r} in {self._describe_element(element_index)}"
 
     async def press(self, element_index: int, value: str) -> str:
         key = normalize_key(value)
         await self._click_element(element_index)
         await self.page.keyboard.press(key)
-        return f"Pressed {key} on element [{element_index}]"
+        return f"Pressed {key} on {self._describe_element(element_index)}"
 
     async def switch_tab(self, tab_id: str) -> str:
         if self._context is None:

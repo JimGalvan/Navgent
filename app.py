@@ -68,12 +68,20 @@ def update_prompt(prompt_data: PromptData, prompt_template: str) -> str:
     return prompt_template.format(**prompt_data.__dict__)
 
 
+def format_history(history: list[str]) -> str:
+    lines = []
+    for number, record in enumerate(history, start=1):
+        record = record.replace("\n", "\n   ")
+        lines.append(f"{number}. {record}")
+    return "\n".join(lines)
+
+
 def update_prompt_data(tool_result: ToolResult, task: str, history: list[str]) -> PromptData:
-    history_text = "\n".join(history)
+    history_text = format_history(history)
 
     match tool_result.tool_name:
-        case "observe_page" | "navigate":
-            observation: Observation = tool_result.output
+        case "observe_page" | "navigate" | "execute_steps":
+            observation: Observation | None = tool_result.output
             return PromptData(task=task, history=history_text, observation=str(observation))
         case "read_page_text":
             text: str = tool_result.output
@@ -111,7 +119,8 @@ async def run(task: str) -> str | None:
                 return message.content
             for tool_call in message.tool_calls:
                 tool_result = await execute_tool_call(tool_context, tool_call)
-                history.append(tool_result.history_record)
+                if tool_result.history_record:
+                    history.append(tool_result.history_record)
                 prompt_data = update_prompt_data(tool_result, task, history)
                 current_prompt = update_prompt(prompt_data, prompt_template)
 

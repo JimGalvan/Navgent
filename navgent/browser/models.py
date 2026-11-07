@@ -24,6 +24,14 @@ class Tab:
     title: str
     url: str
 
+    def __str__(self) -> str:
+        parts = [self.id]
+        if self.selected:
+            parts.append("[selected]")
+        parts.append(f"title={self.title!r}")
+        parts.append(f"url={self.url!r}")
+        return " ".join(parts)
+
 
 @dataclass
 class Iframe:
@@ -97,15 +105,23 @@ class Observation:
 
         elements = "\n".join(formatted_elements) if formatted_elements else "(none)"
 
+        tab_lines = []
+        for tab in self.tabs:
+            tab_lines.append(str(tab))
+        tabs = "\n".join(tab_lines)
+
         iframe_lines = []
         for iframe in self.iframes:
             iframe_lines.append(str(iframe))
         iframes = "\n".join(iframe_lines)
 
-        return (
+        sections = [
             f'<page url="{url}" title="{title}" pages_below="{self.pages_below:.1f}">\n\n'
-            f"Interactive elements:\n{elements}\n\n</page>\n"
-            f"<page-content>{self.page_content}</page-content>\n"
-            f"<available-tabs>{self.tabs}</available-tabs>\n"
-            f"<available-iframes>\n{iframes}\n</available-iframes>"
-        )
+            f"Interactive elements:\n{elements}\n\n</page>",
+            f"<page-content>{self.page_content}</page-content>",
+            f"<available-tabs>\n{tabs}\n</available-tabs>",
+        ]
+        has_only_main_frame = len(self.iframes) <= 1
+        if not has_only_main_frame:
+            sections.append(f"<available-iframes>\n{iframes}\n</available-iframes>")
+        return "\n".join(sections)

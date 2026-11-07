@@ -21,8 +21,7 @@ async def navigate(context: ToolContext, url: str) -> ToolResult[Observation]:
 
 async def observe_page(context: ToolContext) -> ToolResult[Observation]:
     observation = await context.browser_session.attempt_observe_page()
-    history_record = f'observe_page → "{observation.title}" {observation.url}'
-    return ToolResult(tool_name="observe_page", succeeded=True, history_record=history_record, output=observation)
+    return ToolResult(tool_name="observe_page", succeeded=True, history_record="", output=observation)
 
 
 async def read_page_text(context: ToolContext) -> ToolResult[str]:
@@ -34,12 +33,17 @@ async def read_page_text(context: ToolContext) -> ToolResult[str]:
     return ToolResult(tool_name="read_page_text", succeeded=True, history_record=history_record, output=page_text)
 
 
-async def execute_steps(context: ToolContext, steps: list[dict]) -> ToolResult[list[str]]:
+async def execute_steps(context: ToolContext, steps: list[dict]) -> ToolResult[Observation]:
     session = context.browser_session
     for step in steps[:-1]:
         if step["action"] in ("click", "press"):
-            message = f"{step['action']} must be the last step; observe the page before planning more."
-            return ToolResult(tool_name="execute_steps", succeeded=False, history_record=message, output=[message])
+            planned_steps = []
+            for planned in steps:
+                planned_steps.append(f"{planned['action']} [{planned['element_index']}]")
+            planned_text = ", ".join(planned_steps)
+            message = f"Rejected plan ({planned_text}): {step['action']} must be the last step, nothing was run."
+            observation = await session.attempt_observe_page()
+            return ToolResult(tool_name="execute_steps", succeeded=False, history_record=message, output=observation)
 
     previous_url = session.page.url
     messages = []
@@ -59,7 +63,8 @@ async def execute_steps(context: ToolContext, steps: list[dict]) -> ToolResult[l
                 message = await session.press(index, value)
             case _:
                 messages.append(f"Unknown action {action}")
-                return ToolResult(tool_name="execute_steps", succeeded=False, history_record="\n".join(messages), output=messages)
+                observation = await session.attempt_observe_page()
+                return ToolResult(tool_name="execute_steps", succeeded=False, history_record="\n".join(messages), output=observation)
         messages.append(message)
 
     current_url = await session.wait_for_page_to_settle()
@@ -67,7 +72,8 @@ async def execute_steps(context: ToolContext, steps: list[dict]) -> ToolResult[l
         messages.append(f"URL changed to {current_url}")
     else:
         messages.append(f"Still on {current_url}")
-    return ToolResult(tool_name="execute_steps", succeeded=True, history_record="\n".join(messages), output=messages)
+    observation = await session.attempt_observe_page()
+    return ToolResult(tool_name="execute_steps", succeeded=True, history_record="\n".join(messages), output=observation)
 
 
 async def switch_tab(context: ToolContext, tab_id: str) -> ToolResult[str]:

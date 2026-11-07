@@ -4,6 +4,8 @@
     const MAX_VALUE_CHARS = 40;
     const MAX_SIGNATURE_TEXT_CHARS = 40;
     const MAX_HREF_CHARS = 60;
+    const MAX_ID_CHARS = 60;
+    const READABLE_ID = /^[a-z][a-z0-9_-]*$/i;
     const MAX_PAGE_TEXT_CHARS = 3000;
     const MIN_CLICKABLE_PX = 3;
     const CLIP_TIMEOUT_MS = 250;
@@ -273,13 +275,21 @@
         return element.disabled === true || element.getAttribute('aria-disabled') === 'true';
     }
 
+    function checkIfReadableId(value) {
+        return value && value.length <= MAX_ID_CHARS && READABLE_ID.test(value);
+    }
+
     function describeAttributes(element) {
         const attributes = [];
         const role = element.getAttribute('role');
         const href = element.getAttribute('href');
+        const id = element.getAttribute('id');
+        const name = element.getAttribute('name');
 
         if (role) attributes.push('role=' + role);
         if (element.type) attributes.push('type=' + element.type);
+        if (checkIfReadableId(id)) attributes.push('id=' + id);
+        if (checkIfReadableId(name) && name !== id) attributes.push('name=' + name);
         if (href) attributes.push('href=' + getLinkTarget(href).slice(0, MAX_HREF_CHARS));
 
         for (const state of [
@@ -324,6 +334,14 @@
         return entry.element.tagName === 'LABEL'
             && entry.element.control
             && keptElements.has(entry.element.control);
+    }
+
+    function checkIfWrapsAnotherControl(entry, reachableElements) {
+        if (entry.kind !== INFERRED) return false;
+        for (const other of reachableElements) {
+            if (other !== entry.element && entry.element.contains(other)) return true;
+        }
+        return false;
     }
 
     function calculateRank(entry) {
@@ -396,6 +414,7 @@
         keptElements.add(candidate.element);
         reachable.push({
             element: candidate.element,
+            kind: candidate.kind,
             point: point,
             order: reachable.length,
             isLink: isLink,
@@ -403,8 +422,10 @@
         });
     }
 
+    const reachableElements = reachable.map((entry) => entry.element);
     const found = reachable
         .filter((entry) => !checkIfNamesAKeptControl(entry))
+        .filter((entry) => !checkIfWrapsAnotherControl(entry, reachableElements))
         .sort((first, second) =>
             calculateRank(first) - calculateRank(second) || first.order - second.order)
         .slice(0, MAX_ELEMENTS)

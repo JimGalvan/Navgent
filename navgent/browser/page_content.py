@@ -140,10 +140,14 @@ class PageContent:
             sizes.append(len(text))
         limits = fair_share(sizes, char_budget)
 
+        has_only_main_frame = len(frames) == 1
         lines = []
         for (indexes, text), limit in zip(filled_groups, limits):
             if len(text) > limit:
                 text = keep_head_and_tail(drop_repeated_ngrams(text), max(limit, 40))
+            if has_only_main_frame:
+                lines.append(text)
+                continue
             duplicate_tag = f" (×{len(indexes)} identical)" if len(indexes) > 1 else ""
             lines.append(f"iframe[{join_indexes(indexes)}]{duplicate_tag} {text}")
 
