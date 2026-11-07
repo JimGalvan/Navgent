@@ -29,7 +29,7 @@ class PlanStep:
     id: int
     description: str
     status: StepStatus = StepStatus.PENDING
-    note: str = ""
+    evidence: str = ""
 
 
 @dataclass
@@ -51,12 +51,9 @@ class Plan:
         return pending
 
     def current_step(self) -> PlanStep | None:
-        next_index = 0
-        for index, step in enumerate(self.steps):
-            if step.status != StepStatus.PENDING:
-                next_index = index + 1
-        if next_index < len(self.steps):
-            return self.steps[next_index]
+        for step in self.steps:
+            if step.status == StepStatus.PENDING:
+                return step
         return None
 
     def __str__(self) -> str:
@@ -68,8 +65,8 @@ class Plan:
             else:
                 mark = STATUS_MARKS[step.status]
             line = f"{mark} {step.id}. {step.description}"
-            if step.note:
-                line += f" — {step.note}"
+            if step.evidence:
+                line += f' — "{step.evidence}"'
             lines.append(line)
         return "\n".join(lines)
 

@@ -117,18 +117,38 @@ async def switch_frame(context: ToolContext, frame_id: str) -> ToolResult[Observ
     return ToolResult(tool_name="switch_frame", succeeded=True, history_record=message, output=observation)
 
 
-async def update_step_status(context: ToolContext, step_id: int, status: str, note: str) -> ToolResult[None]:
-    step = None
-    if context.plan:
-        step = context.plan.get_step(step_id)
-    if step is None:
-        message = f"Rejected: there is no plan step {step_id}."
-        return ToolResult(tool_name="update_step_status", succeeded=False, history_record=message, output=None)
+async def update_step_status(context: ToolContext, step_id: int, status: str, evidence: str) -> ToolResult[Observation]:
+    observation = await context.browser_session.attempt_observe_page()
+    rejection = await check_step_update(context, step_id, evidence)
+    if rejection:
+        return ToolResult(tool_name="update_step_status", succeeded=False, history_record=rejection, output=observation)
 
+    step = context.plan.get_step(step_id)
     step.status = StepStatus(status)
-    step.note = note
-    history_record = f"step {step_id} → {status}: {note}"
-    return ToolResult(tool_name="update_step_status", succeeded=True, history_record=history_record, output=None)
+    step.evidence = evidence
+    history_record = f'step {step_id} → {status}: "{evidence}"'
+    return ToolResult(tool_name="update_step_status", succeeded=True, history_record=history_record, output=observation)
+
+
+async def check_step_update(context: ToolContext, step_id: int, evidence: str) -> str | None:
+    if context.plan is None:
+        return "Rejected: there is no plan."
+
+    current_step = context.plan.current_step()
+    if current_step is None:
+        return "Rejected: every step is finished. Reply with your answer."
+    if step_id != current_step.id:
+        return f"Rejected: step {current_step.id} is the current step. Update it before step {step_id}."
+
+    session = context.browser_session
+    page_text = await session.get_page_text()
+    if normalize(evidence) not in normalize(f"{page_text} {session.page.url}"):
+        return f'Rejected: "{evidence}" is not on the current page. Copy text you can see.'
+    return None
+
+
+def normalize(text: str) -> str:
+    return " ".join(text.lower().split())
 
 
 TOOLS = {

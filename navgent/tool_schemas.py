@@ -125,14 +125,14 @@ TOOL_SCHEMAS = [
             "name": "update_step_status",
             "description": (
                 "Mark a <plan> step as done or failed. Call it as soon as the page confirms the [>] step is complete, "
-                "before starting the next step.\n"
+                "before starting the next step. Steps can only be updated in order, and the evidence must be on the current page.\n"
                 "Legend: [x] done, [>] current step, [ ] not started, [!] failed.\n"
                 "Example: <plan> shows\n"
                 "  [x] 1. Open the site\n"
                 "  [>] 2. Log in\n"
                 "  [ ] 3. Add the $15.99 item to the cart\n"
                 "After the login click, the observation shows the Products page, so call "
-                'update_step_status(step_id=2, status="done", note="logged in as standard_user"). '
+                'update_step_status(step_id=2, status="done", evidence="Products"). '
                 "[>] then moves to step 3."
             ),
             "parameters": {
@@ -140,9 +140,9 @@ TOOL_SCHEMAS = [
                 "properties": {
                     "step_id": {"type": "integer", "description": "The number of the step in <plan>."},
                     "status": {"type": "string", "enum": ["done", "failed"]},
-                    "note": {"type": "string", "description": "Short note of what you found or did, e.g. the credentials or item used."},
+                    "evidence": {"type": "string", "description": "Exact text copied from the current page that proves the step, e.g. 'Thank you for your order!'."},
                 },
-                "required": ["step_id", "status", "note"],
+                "required": ["step_id", "status", "evidence"],
                 "additionalProperties": False,
             },
             "strict": True,

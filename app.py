@@ -13,16 +13,16 @@ from navgent.browser.browser_session import BrowserSession
 from navgent.browser.models import Observation
 from navgent.context import ToolContext
 from navgent.log import Log
-from navgent.planner import Plan
+from navgent.planner import Plan, create_plan
 from navgent.tool_schemas import TOOL_SCHEMAS
 from navgent.tools import TOOLS, ToolResult
-from navgent.planner import create_plan
 
 MODEL = "gpt-4.1-mini"
 MAX_STEPS = 25
 
 SYSTEM_PROMPT = """
 You are a browser agent. Use the tools to complete the task.
+Work through <plan> in order. When the page confirms the [>] step, call update_step_status before moving on.
 Only use element indexes listed in the observation. If the element you need is not listed, scroll to find it.
 <viewport-text> only shows the text visible on the screen, and may be shortened where it says "chars omitted". If you need text that is off screen or omitted, call read_page_text instead of guessing.
 When the task is finished, reply with your answer instead of calling a tool.
@@ -32,6 +32,7 @@ When the task is finished, reply with your answer instead of calling a tool.
 @dataclass
 class PromptData:
     task: str
+    plan: Plan
     history: str
     observation: Observation | str
 
@@ -56,8 +57,12 @@ async def execute_tool_call(context: ToolContext, tool_call: ChatCompletionMessa
 
 
 def update_prompt(prompt_data: PromptData, prompt_template: str) -> str:
-    observation: Observation = prompt_data.observation
-    return prompt_template.format(task=prompt_data.task, history=prompt_data.history, observation=str(observation))
+    return prompt_template.format(
+        task=prompt_data.task,
+        plan=prompt_data.plan,
+        history=prompt_data.history,
+        observation=str(prompt_data.observation),
+    )
 
 
 def add_to_history(history: list[str], record: str) -> None:
@@ -86,18 +91,19 @@ def format_history(history: list[str]) -> str:
     return "\n".join(lines)
 
 
-def create_prompt_data(tool_result: ToolResult, task: str, history: list[str]) -> PromptData:
+def create_prompt_data(tool_result: ToolResult, task: str, plan: Plan, history: list[str]) -> PromptData:
     history_text = format_history(history)
 
     match tool_result.tool_name:
-        case "observe_page" | "navigate" | "execute_steps" | "scroll" | "switch_tab" | "switch_frame":
+        case ("observe_page" | "navigate" | "execute_steps" | "scroll" | "switch_tab" | "switch_frame"
+              | "update_step_status"):
             observation: Observation | None = tool_result.output
-            return PromptData(task=task, history=history_text, observation=observation)
+            return PromptData(task=task, plan=plan, history=history_text, observation=observation)
         case "read_page_text":
             text: str = tool_result.output
-            return PromptData(task=task, history=history_text, observation=text)
+            return PromptData(task=task, plan=plan, history=history_text, observation=text)
 
-    return PromptData(task=task, history=history_text, observation="None")
+    return PromptData(task=task, plan=plan, history=history_text, observation="None")
 
 
 current_prompt = ""
@@ -113,9 +119,12 @@ async def run(task: str) -> str | None:
 
     browser_manager = BrowserManager(headless=False)
     browser_session = BrowserSession(browser_manager)
-    tool_context = ToolContext(browser_session=browser_session)
+    tool_context = ToolContext(browser_session=browser_session, plan=plan)
     prompt_template = dedent("""\
                         <task>{task}</task>
+                        <plan>
+                        {plan}
+                        </plan>
                         <history>
                         {history}
                         </history>
@@ -123,7 +132,7 @@ async def run(task: str) -> str | None:
                         {observation}
                         </observation>
                     """)
-    current_prompt = prompt_template.format(task=task, history="None", observation="None")
+    current_prompt = prompt_template.format(task=task, plan=plan, history="None", observation="None")
     history: list[str] = []
 
     try:
@@ -135,7 +144,7 @@ async def run(task: str) -> str | None:
                 tool_result = await execute_tool_call(tool_context, tool_call)
                 if tool_result.history_record:
                     add_to_history(history, tool_result.history_record)
-                prompt_data = create_prompt_data(tool_result, task, history)
+                prompt_data = create_prompt_data(tool_result, task, plan, history)
                 current_prompt = update_prompt(prompt_data, prompt_template)
 
                 Log.write_separator()
