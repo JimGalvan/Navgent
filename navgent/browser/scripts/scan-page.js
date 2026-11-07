@@ -146,7 +146,7 @@
     }
 
     function checkIfPrivateField(element) {
-        if (element.dataset.tabvioSensitive) return true;
+        if (element.dataset.navgentSensitive) return true;
         if (PRIVATE_INPUT_TYPES.includes(element.type)) return true;
 
         const autocomplete = (element.getAttribute('autocomplete') || '').toLowerCase();

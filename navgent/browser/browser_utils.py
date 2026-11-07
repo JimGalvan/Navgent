@@ -20,8 +20,11 @@ async def evaluate_with_timeout(frame, script, argument=None):
 
 
 def normalize_key(value: str) -> str:
-    parts = [part for part in value.strip().split("+") if part]
-    if not parts:
+    keys = []
+    for part in value.strip().split("+"):
+        if part:
+            keys.append(KEY_ALIASES.get(part.lower(), part))
+    if not keys:
         return value
 
-    return "+".join(KEY_ALIASES.get(part.lower(), part) for part in parts)
+    return "+".join(keys)

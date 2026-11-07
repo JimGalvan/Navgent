@@ -4,10 +4,10 @@ SCAN_BUDGET_SECONDS = 5
 BROWSER_LAUNCH_ARGS = ["--disable-blink-features=AutomationControlled"]
 VIEWPORT_WIDTH = 1365
 VIEWPORT_HEIGHT = 768
+FRAME_QUALITY = 55
+FRAME_QUALITY_TAKEOVER = 80
 OBSERVE_ATTEMPTS = 3
-PAGE_TEXT_CHARACTER_LIMIT = 3_000
 MAX_ELEMENTS = 100
-ACTION_DELAY_SECONDS = 0.4
 
 KEY_ALIASES = {
     "ctrl": "Control",
@@ -41,3 +41,24 @@ KEY_ALIASES = {
     "arrowleft": "ArrowLeft",
     "arrowright": "ArrowRight",
 }
+
+CONTROL_KEYS = frozenset(
+    {
+        "Enter",
+        "Tab",
+        "Backspace",
+        "Delete",
+        "Escape",
+        "ArrowUp",
+        "ArrowDown",
+        "ArrowLeft",
+        "ArrowRight",
+        "Home",
+        "End",
+        "PageUp",
+        "PageDown",
+        "Control+A",
+        "Meta+A",
+    }
+)
+MAX_CONTROL_SCROLL_PIXELS = 2_000

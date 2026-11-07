@@ -1,4 +1,4 @@
-from navgent.browser.models import Element, Bounds
+from navgent.browser.models import Bounds, Element
 
 
 class ElementFactory:

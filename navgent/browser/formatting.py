@@ -1,9 +1,4 @@
-import html
 import re
-
-from navgent.browser.models import Element, Observation
-
-
 
 
 def normalize_page_text(text: str) -> str:

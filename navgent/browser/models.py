@@ -1,7 +1,5 @@
 import html
-import re
 from dataclasses import dataclass
-from typing import List
 
 from navgent.browser.constants import MAX_ELEMENTS
 
@@ -132,7 +130,7 @@ class Observation:
         if self.elements_outside_viewport_count:
             elements += (
                 f"\n({self.elements_outside_viewport_count} more elements outside the screen, "
-                "use 'scroll' to reach them)"
+                "use page-navigator to reach them)"
             )
 
         tab_lines = []

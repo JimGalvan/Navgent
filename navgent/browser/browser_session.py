@@ -8,11 +8,15 @@ from urllib.parse import urlsplit
 from playwright.async_api import BrowserContext, Page
 from playwright.async_api import Frame as PlaywrightFrame
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
-from wcwidth import width
 
 from navgent.browser.browser_manager import BrowserManager
-from navgent.browser.browser_utils import evaluate_with_timeout, get_js_script, normalize_key
+from navgent.browser.browser_utils import (
+    evaluate_with_timeout,
+    get_js_script,
+    normalize_key,
+)
 from navgent.browser.constants import (
+    FRAME_QUALITY,
     LOAD_TIMEOUT_MS,
     OBSERVE_ATTEMPTS,
     SCAN_BUDGET_SECONDS,
@@ -132,7 +136,11 @@ class BrowserSession:
     def _live_pages(self) -> list[Page]:
         if self._context is None:
             return []
-        return [page for page in self._context.pages if not page.is_closed()]
+        pages = []
+        for page in self._context.pages:
+            if not page.is_closed():
+                pages.append(page)
+        return pages
 
     def _reconcile_current_page(self) -> None:
         pages = self._live_pages()
@@ -156,16 +164,18 @@ class BrowserSession:
 
         main_frame = self._page.main_frame
         active_frame = self._active_frame()
-        return [
-            Iframe(
-                id=frame_id,
-                selected=frame is active_frame,
-                main=frame is main_frame,
-                name=frame.name or "",
-                url=frame.url,
+        iframes = []
+        for frame_id, frame in self._iframes.sync(list(self._page.frames)).items():
+            iframes.append(
+                Iframe(
+                    id=frame_id,
+                    selected=frame is active_frame,
+                    main=frame is main_frame,
+                    name=frame.name or "",
+                    url=frame.url,
+                )
             )
-            for frame_id, frame in self._iframes.sync(list(self._page.frames)).items()
-        ]
+        return iframes
 
     def _active_frame(self) -> PlaywrightFrame:
         page = self.page
@@ -270,13 +280,15 @@ class BrowserSession:
             elements_outside_viewport_count=elements_outside_viewport_count,
         )
 
-    def _get_stored_element(self, element_index: int) -> Element | None:
+    def get_stored_element(self, element_index: int) -> Element | None:
         if 0 <= element_index < len(self._elements):
             return self._elements[element_index]
         return None
 
-    def has_element(self, element_index: int) -> bool:
-        return self._get_stored_element(element_index) is not None
+    async def get_text_in_viewport(self) -> str:
+        return await evaluate_with_timeout(
+            self._active_frame(), self._get_script("get-text-in-viewport.js")
+        )
 
     async def get_page_text(self) -> str:
         return await evaluate_with_timeout(
@@ -316,14 +328,14 @@ class BrowserSession:
         )
 
     def _describe_element(self, element_index: int) -> str:
-        element = self._get_stored_element(element_index)
+        element = self.get_stored_element(element_index)
         if element is None:
             return f"element [{element_index}]"
         opening_tag = f"{element.tag} {element.attrs}".strip()
         return f"<{opening_tag}> {element.text}".strip()
 
     async def _click_element(self, element_index: int) -> None:
-        element = self._get_stored_element(element_index)
+        element = self.get_stored_element(element_index)
         if element is None:
             raise ValueError(f"Element [{element_index}] is not available")
 
@@ -339,6 +351,29 @@ class BrowserSession:
         await self.page.keyboard.press("Control+A")
         await self.page.keyboard.insert_text(value)
         return f"Filled {self._describe_element(element_index)}"
+
+    async def fill_sensitive(
+            self, element_index: int, value: str, submit_element_index: int | None = None
+    ) -> str:
+        element = self.get_stored_element(element_index)
+        if element is None:
+            raise ValueError(f"Element [{element_index}] is not available")
+
+        await evaluate_with_timeout(
+            self._active_frame(),
+            self._get_script("mask-sensitive-field.js"),
+            {"x": element.cx, "y": element.cy},
+        )
+        await self.fill(element_index, value)
+        return await self._submit_sensitive_field(element_index, submit_element_index)
+
+    async def _submit_sensitive_field(self, element_index: int, submit_element_index: int | None) -> str:
+        if submit_element_index is not None:
+            await self._click_element(submit_element_index)
+            return f"Filled element [{element_index}] and clicked element [{submit_element_index}] to submit it"
+
+        await self.page.keyboard.press("Enter")
+        return f"Filled element [{element_index}] and pressed Enter to submit it"
 
     async def select(self, element_index: int, value: str) -> str:
         await self._click_element(element_index)
@@ -374,6 +409,43 @@ class BrowserSession:
             await (await frame.frame_element()).scroll_into_view_if_needed()
         self._invalidate_elements()
         return f"Switched to frame {iframe_id} with url {frame.url}"
+
+    async def user_click(self, horizontal: float, vertical: float) -> str:
+        await self.page.mouse.click(horizontal, vertical)
+        self._invalidate_elements()
+        return f"Clicked at {horizontal:.0f}, {vertical:.0f}"
+
+    async def user_scroll(self, horizontal: float, vertical: float, amount: float) -> str:
+        await self.page.mouse.move(horizontal, vertical)
+        await self.page.mouse.wheel(0, amount)
+        self._invalidate_elements()
+        return f"Scrolled by {amount:.0f} pixels"
+
+    async def user_mouse_down(self, horizontal: float, vertical: float) -> str:
+        await self.page.mouse.move(horizontal, vertical)
+        await self.page.mouse.down()
+        self._invalidate_elements()
+        return "Mouse button held"
+
+    async def user_mouse_up(self) -> str:
+        await self.page.mouse.up()
+        self._invalidate_elements()
+        return "Mouse button released"
+
+    async def user_key(self, key: str) -> str:
+        await self.page.keyboard.press(key)
+        self._invalidate_elements()
+        return f"Pressed {key}"
+
+    async def user_text(self, text: str) -> str:
+        await self.page.keyboard.insert_text(text)
+        self._invalidate_elements()
+        return "Typed text"
+
+    async def capture_screen_frame(self, quality: int = FRAME_QUALITY) -> bytes | None:
+        if not self.is_open:
+            return None
+        return await self.page.screenshot(type="jpeg", quality=quality, scale="css")
 
     async def close(self) -> None:
         """Close this session's context. The browser belongs to BrowserManager."""
