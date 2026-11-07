@@ -72,7 +72,12 @@ def format_history(history: list[str]) -> str:
     lines = []
     for number, record in enumerate(history, start=1):
         record = record.replace("\n", "\n   ")
-        lines.append(f"{number}. {record}")
+
+        is_last_step = len(history) == number
+        if is_last_step:
+            lines.append(f"{number}.(last step) {record}")
+        else:
+            lines.append(f"{number}. {record}")
     return "\n".join(lines)
 
 
