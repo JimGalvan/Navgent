@@ -119,4 +119,33 @@ TOOL_SCHEMAS = [
             "strict": True,
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_step_status",
+            "description": (
+                "Mark a <plan> step as done or failed. Call it as soon as the page confirms the [>] step is complete, "
+                "before starting the next step.\n"
+                "Legend: [x] done, [>] current step, [ ] not started, [!] failed.\n"
+                "Example: <plan> shows\n"
+                "  [x] 1. Open the site\n"
+                "  [>] 2. Log in\n"
+                "  [ ] 3. Add the $15.99 item to the cart\n"
+                "After the login click, the observation shows the Products page, so call "
+                'update_step_status(step_id=2, status="done", note="logged in as standard_user"). '
+                "[>] then moves to step 3."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "step_id": {"type": "integer", "description": "The number of the step in <plan>."},
+                    "status": {"type": "string", "enum": ["done", "failed"]},
+                    "note": {"type": "string", "description": "Short note of what you found or did, e.g. the credentials or item used."},
+                },
+                "required": ["step_id", "status", "note"],
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+    },
 ]

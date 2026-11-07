@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 class Log:
-    path = Path(__file__).parent.parent / "logs" / f"{datetime.now():%Y-%m-%d_%H-%M-%S}.txt"
+    path = Path(__file__).parent.parent / "logs" / f"{datetime.now():%Y-%m-%d_%H-%M-%S}.log"
     separator = 100 * "="
 
     @staticmethod

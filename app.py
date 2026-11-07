@@ -13,8 +13,10 @@ from navgent.browser.browser_session import BrowserSession
 from navgent.browser.models import Observation
 from navgent.context import ToolContext
 from navgent.log import Log
+from navgent.planner import Plan
 from navgent.tool_schemas import TOOL_SCHEMAS
 from navgent.tools import TOOLS, ToolResult
+from navgent.planner import create_plan
 
 MODEL = "gpt-4.1-mini"
 MAX_STEPS = 25
@@ -34,15 +36,6 @@ class PromptData:
     observation: Observation | str
 
 
-def build_prompt(events: list[str]) -> list[dict]:
-    history = "\n\n".join(events)
-    user_message = f"{history}\n\nWhat is the next step?"
-    print(f"user_message: {user_message}")
-    return [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": user_message},
-    ]
-
 
 async def ask_model(client: AsyncOpenAI, prompt: str) -> ChatCompletionMessage:
     messages = [
@@ -60,11 +53,6 @@ async def execute_tool_call(context: ToolContext, tool_call: ChatCompletionMessa
     tool = TOOLS[tool_call.function.name]
     arguments = json.loads(tool_call.function.arguments)
     return await tool(context, **arguments)
-
-
-def result_to_event(tool_call: ChatCompletionMessageToolCall, tool_output: str) -> str:
-    name = tool_call.function.name
-    return f"<{name} arguments={tool_call.function.arguments}>\n{tool_output}\n</{name}>"
 
 
 def update_prompt(prompt_data: PromptData, prompt_template: str) -> str:
@@ -86,13 +74,15 @@ def add_to_history(history: list[str], record: str) -> None:
 
 def format_history(history: list[str]) -> str:
     lines = []
+    last_step_number = 0
     for number, record in enumerate(history, start=1):
         record = record.replace("\n", "\n   ")
         is_last_step = len(history) == number
+        lines.append(f"{number}. {record}")
         if is_last_step:
-            lines.append(f"{number}.(last step) {record}")
-        else:
-            lines.append(f"{number}. {record}")
+            last_step_number = number
+
+    lines.append(f"Record #{last_step_number} is the last history record.")
     return "\n".join(lines)
 
 
@@ -116,7 +106,11 @@ current_prompt = ""
 async def run(task: str) -> str | None:
     global current_prompt
     load_dotenv()
-    client = AsyncOpenAI()
+    executor_client = AsyncOpenAI()
+    planner_client = AsyncOpenAI()
+
+    plan: Plan = await create_plan(planner_client, task)
+
     browser_manager = BrowserManager(headless=False)
     browser_session = BrowserSession(browser_manager)
     tool_context = ToolContext(browser_session=browser_session)
@@ -134,7 +128,7 @@ async def run(task: str) -> str | None:
 
     try:
         for _ in range(MAX_STEPS):
-            message = await ask_model(client, current_prompt)
+            message = await ask_model(executor_client, current_prompt)
             if not message.tool_calls:
                 return message.content
             for tool_call in message.tool_calls:
@@ -155,8 +149,8 @@ async def run(task: str) -> str | None:
         # await browser_manager.stop()
 
 
-task = "Go to https://www.saucedemo.com/ and login, add to the Cart an item of $15.99 and go to Checkout, enter random test credentials and complete the purchase."
-task = "Go to https://the-internet.herokuapp.com/ and open the 'WYSIWYG Editor' example, then tell me the text inside the editor."
+task = "Go to https://www.saucedemo.com/ and login, add to the Cart an item of $15.99 and go to Checkout, enter random test credentials and complete the purchase. Tell me what you see at the end"
+# task = "Go to https://the-internet.herokuapp.com/ and open the 'WYSIWYG Editor' example, then tell me the text inside the editor."
 # task = "Go to https://books.toscrape.com/, go to the next page of books, and tell me the title and price of the first book on page 2."
 # task = "Go to https://www.saucedemo.com/ and login"
 # task = (
@@ -168,6 +162,7 @@ task = "Go to https://the-internet.herokuapp.com/ and open the 'WYSIWYG Editor' 
 #     "Finally, open the 'Large & Deep DOM' example and tell me the last row number of the table at the bottom of the page. "
 #     "Reply with all three answers."
 # )
+# task = "Go to NexMenus and find the Privacy link"
 
 if __name__ == "__main__":
     answer = asyncio.run(run(task))
