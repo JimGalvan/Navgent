@@ -1,6 +1,7 @@
+import asyncio
 from dataclasses import dataclass
 
-from navgent.browser.constants import PAGE_TEXT_CHARACTER_LIMIT
+from navgent.browser.constants import ACTION_DELAY_SECONDS, PAGE_TEXT_CHARACTER_LIMIT
 from navgent.browser.models import Observation
 from navgent.context import ToolContext
 from navgent.planner import StepStatus
@@ -80,6 +81,7 @@ async def execute_steps(context: ToolContext, steps: list[dict]) -> ToolResult[O
                                   output=observation)
         if message:
             messages.append(message)
+        await asyncio.sleep(ACTION_DELAY_SECONDS)
 
     current_url = await session.wait_for_page_to_settle()
     if current_url != previous_url:
