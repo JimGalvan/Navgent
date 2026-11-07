@@ -74,6 +74,22 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "scroll",
+            "description": "Scroll the current page or frame by most of a screen and return the new page state. Use it when <page-content> says there is more below and the element you need is not listed.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "direction": {"type": "string", "enum": ["down", "up"]},
+                },
+                "required": ["direction"],
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "switch_tab",
             "description": "Switch to a tab by an id such as `tab:1` from <available-tabs>.",
             "parameters": {

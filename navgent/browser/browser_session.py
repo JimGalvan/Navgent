@@ -256,13 +256,16 @@ class BrowserSession:
             self._active_frame(), self._get_script("get-page-text.js")
         )
 
-    async def scroll(self, amount: float) -> str:
+    async def scroll(self, pages: float) -> str:
         position = await evaluate_with_timeout(
             self._active_frame(),
             self._get_script("scroll-by-pages.js"),
-            amount,
+            pages,
         )
-        return f"Scrolled to {position['current']} of {position['maximum']} pixels"
+        self._invalidate_elements()
+        current_pixels = round(position["current"])
+        maximum_pixels = round(position["maximum"])
+        return f"Scrolled to {current_pixels} of {maximum_pixels} pixels"
 
     async def _page_coordinates(
             self, horizontal: float, vertical: float

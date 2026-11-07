@@ -4,6 +4,8 @@ from navgent.browser.constants import PAGE_TEXT_CHARACTER_LIMIT
 from navgent.browser.models import Observation
 from navgent.context import ToolContext
 
+SCROLL_PAGES = 0.8
+
 
 @dataclass
 class ToolResult[T]:
@@ -76,6 +78,19 @@ async def execute_steps(context: ToolContext, steps: list[dict]) -> ToolResult[O
     return ToolResult(tool_name="execute_steps", succeeded=True, history_record="\n".join(messages), output=observation)
 
 
+async def scroll(context: ToolContext, direction: str) -> ToolResult[Observation]:
+    session = context.browser_session
+    if direction == "down":
+        pages = SCROLL_PAGES
+    else:
+        pages = -SCROLL_PAGES
+
+    message = await session.scroll(pages)
+    observation = await session.attempt_observe_page()
+    history_record = f"scroll {direction} → {message}"
+    return ToolResult(tool_name="scroll", succeeded=True, history_record=history_record, output=observation)
+
+
 async def switch_tab(context: ToolContext, tab_id: str) -> ToolResult[str]:
     message = await context.browser_session.switch_tab(tab_id)
     return ToolResult(tool_name="switch_tab", succeeded=True, history_record=message, output=message)
@@ -91,6 +106,7 @@ TOOLS = {
     "observe_page": observe_page,
     "read_page_text": read_page_text,
     "execute_steps": execute_steps,
+    "scroll": scroll,
     "switch_tab": switch_tab,
     "switch_frame": switch_frame,
 }
