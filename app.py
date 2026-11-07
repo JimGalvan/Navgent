@@ -20,6 +20,7 @@ MAX_STEPS = 10
 
 SYSTEM_PROMPT = """
 You are a browser agent. Use the tools to complete the task.
+Only use element indexes listed in the observation. If the element you need is not listed, scroll to find it.
 When the task is finished, reply with your answer instead of calling a tool.
 """
 
@@ -72,7 +73,6 @@ def format_history(history: list[str]) -> str:
     lines = []
     for number, record in enumerate(history, start=1):
         record = record.replace("\n", "\n   ")
-
         is_last_step = len(history) == number
         if is_last_step:
             lines.append(f"{number}.(last step) {record}")
@@ -85,7 +85,7 @@ def update_prompt_data(tool_result: ToolResult, task: str, history: list[str]) -
     history_text = format_history(history)
 
     match tool_result.tool_name:
-        case "observe_page" | "navigate" | "execute_steps":
+        case "observe_page" | "navigate" | "execute_steps" | "scroll":
             observation: Observation | None = tool_result.output
             return PromptData(task=task, history=history_text, observation=str(observation))
         case "read_page_text":
@@ -129,7 +129,8 @@ async def run(task: str) -> str | None:
                 prompt_data = update_prompt_data(tool_result, task, history)
                 current_prompt = update_prompt(prompt_data, prompt_template)
 
-                print(f"current_prompt: {current_prompt}")
+                print("==========================")
+                print(f"{current_prompt}")
                 print("==========================")
         return None
     finally:
@@ -139,9 +140,18 @@ async def run(task: str) -> str | None:
 
 
 task = "Go to https://www.saucedemo.com/ and login, add to the Cart an item of $15.99 and go to Checkout, enter random test credentials and complete the purchase."
-
+task = "Go to https://the-internet.herokuapp.com/ and open the 'WYSIWYG Editor' example, then tell me the text inside the editor."
+# task = "Go to https://books.toscrape.com/, go to the next page of books, and tell me the title and price of the first book on page 2."
 # task = "Go to https://www.saucedemo.com/ and login"
-
+task = (
+    "Go to https://the-internet.herokuapp.com/. "
+    "Find the 'Multiple Windows' example and open it. Click 'Click Here', switch to the new tab "
+    "and note its heading. Switch back to the first tab. "
+    "Then return to the home page, open 'Frames', then 'Nested Frames', "
+    "and tell me the text in the MIDDLE frame. "
+    "Finally, open the 'Large & Deep DOM' example and tell me the last row number of the table at the bottom of the page. "
+    "Reply with all three answers."
+)
 
 if __name__ == "__main__":
     answer = asyncio.run(run(task))

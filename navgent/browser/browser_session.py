@@ -202,32 +202,44 @@ class BrowserSession:
                 self._reset_page_state(self._page)
         raise RuntimeError("The page kept navigating and could not be observed")
 
-    async def _observe_current_page(self) -> Observation:
-        result = json.loads(await self._scan_page())
-        elements = []
-        seen_links = set()
-        for raw_element in result["elements"]:
+    def _remove_duplicate_links(self, raw_elements: list[dict]) -> list[dict]:
+        """Keep the first link for each (text, href) pair and every non-link element."""
+
+        def find_href(attrs: str) -> str:
             href = ""
-            for attribute in raw_element["attrs"].split():
+            for attribute in attrs.split():
                 if attribute.startswith("href="):
                     href = attribute
-            is_link = raw_element["tag"] == "a" and bool(href)
-            link_key = (raw_element["text"], href)
-            if is_link and link_key in seen_links:
-                continue
-            if is_link:
-                seen_links.add(link_key)
+            return href
 
-            element = Element(index=len(elements), **raw_element)
-            elements.append(element)
+        unique_elements = []
+        seen_links = set()
+        for raw_element in raw_elements:
+            href = find_href(raw_element["attrs"])
+            is_link = raw_element["tag"] == "a" and href != ""
+            if is_link:
+                link_key = (raw_element["text"], href)
+                if link_key in seen_links:
+                    continue
+                seen_links.add(link_key)
+            unique_elements.append(raw_element)
+        return unique_elements
+
+    async def _observe_current_page(self) -> Observation:
+        scan_result = json.loads(await self._scan_page())
+        unique_raw_elements = self._remove_duplicate_links(scan_result["elements"])
+
+        elements = []
+        for index, raw_element in enumerate(unique_raw_elements):
+            elements.append(Element(index=index, **raw_element))
         self._elements = elements
 
         self._reconcile_current_page()
 
         url = self.page.url
         title = await self.page.title()
-        pages_below = float(result.get("pagesBelow", 0))
-        page_content = await PageContent.get_page_content(self._page, char_budget=2_000)
+        pages_below = float(scan_result.get("pagesBelow", 0))
+        page_content = await PageContent.get_page_content(self._page, char_budget=500)
         tabs = await self._collect_tabs()
         iframes = self._collect_iframes()
 
