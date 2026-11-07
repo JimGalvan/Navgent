@@ -1,5 +1,6 @@
 import json
 import re
+from dataclasses import dataclass
 
 from playwright.async_api import Frame, Page
 
@@ -14,8 +15,25 @@ SCROLL_HINT_MIN_PAGES = 0.05
 TIMED_OUT_FRAME_TEXT = "[Frame unavailable: script evaluation timed out]"
 
 
+@dataclass
+class TextBlock:
+    top: float
+    bottom: float
+    text: str
+
+    def middle(self) -> float:
+        return (self.top + self.bottom) / 2
+
+
 def normalize(text: str) -> str:
     return WHITESPACE.sub(" ", text or "").strip()
+
+
+def join_block_texts(blocks: list[TextBlock]) -> str:
+    texts = []
+    for block in blocks:
+        texts.append(block.text)
+    return normalize(" ".join(texts))
 
 
 def join_indexes(indexes: list[int]) -> str:
@@ -25,18 +43,23 @@ def join_indexes(indexes: list[int]) -> str:
     return ",".join(index_strings)
 
 
-def group_identical_frames(frame_texts: dict[int, str]) -> list[tuple[list[int], str]]:
+def group_identical_frames(
+    frame_blocks: dict[int, list[TextBlock]]
+) -> list[tuple[list[int], list[TextBlock]]]:
     """Collapse frames sharing identical text, ordered by first frame index."""
     indexes_by_text: dict[str, list[int]] = {}
-    for index in sorted(frame_texts):
-        text = normalize(frame_texts[index])
+    blocks_by_text: dict[str, list[TextBlock]] = {}
+    for index in sorted(frame_blocks):
+        blocks = frame_blocks[index]
+        text = join_block_texts(blocks)
         if text not in indexes_by_text:
             indexes_by_text[text] = []
+            blocks_by_text[text] = blocks
         indexes_by_text[text].append(index)
 
     groups = []
     for text, indexes in indexes_by_text.items():
-        groups.append((indexes, text))
+        groups.append((indexes, blocks_by_text[text]))
     return groups
 
 
@@ -74,21 +97,20 @@ def fair_share(sizes: list[int], budget: int) -> list[int]:
     return allocations
 
 
-def drop_repeated_ngrams(text: str, n: int = NGRAM_SIZE) -> str:
+def drop_repeated_ngrams(text: str, seen_ngrams: set[tuple[str, ...]], n: int = NGRAM_SIZE) -> str:
     """Remove any word n-gram already seen earlier in this frame.
 
     All n words of a repeat are marked, so trailing fragments of a duplicated
     phrase disappear too instead of leaving debris behind.
     """
     words = text.split()
-    if len(words) <= n:
+    if len(words) < n:
         return text
 
     lowered_words = []
     for word in words:
         lowered_words.append(word.lower())
 
-    seen_ngrams = set()
     is_repeat = [False] * len(words)
     for start in range(len(words) - n + 1):
         ngram = tuple(lowered_words[start:start + n])
@@ -117,11 +139,64 @@ def keep_head_and_tail(text: str, limit: int) -> str:
     return f"{head} …[{omitted_count} chars omitted]… {tail}"
 
 
-def shorten(text: str, limit: int) -> str:
+def remove_repeated_phrases(blocks: list[TextBlock]) -> list[TextBlock]:
+    seen_ngrams = set()
+    deduplicated_blocks = []
+    for block in blocks:
+        text = drop_repeated_ngrams(block.text, seen_ngrams)
+        if text:
+            deduplicated_blocks.append(TextBlock(block.top, block.bottom, text))
+    return deduplicated_blocks
+
+
+def trim_vertically(blocks: list[TextBlock], viewport_height: float, limit: int) -> str:
+    """Fit the text into limit by dropping the blocks farthest from the middle of the screen."""
+    text = join_block_texts(blocks)
     if len(text) <= limit:
         return text
-    deduplicated = drop_repeated_ngrams(text)
-    return keep_head_and_tail(deduplicated, max(limit, MIN_SHORTENED_LENGTH))
+
+    blocks = remove_repeated_phrases(blocks)
+    limit = max(limit, MIN_SHORTENED_LENGTH)
+    center = viewport_height / 2
+
+    distances = []
+    for index, block in enumerate(blocks):
+        distances.append((abs(block.middle() - center), index))
+    distances.sort()
+
+    kept_indexes = set()
+    used_length = 0
+    for _, index in distances:
+        added_length = len(blocks[index].text) + 1
+        if used_length + added_length > limit:
+            break
+        kept_indexes.add(index)
+        used_length += added_length
+
+    oversized_index = None
+    if not kept_indexes:
+        oversized_index = distances[0][1]
+
+    omitted_above = 0
+    omitted_below = 0
+    kept_texts = []
+    for index, block in enumerate(blocks):
+        if index in kept_indexes:
+            kept_texts.append(block.text)
+        elif index == oversized_index:
+            kept_texts.append(keep_head_and_tail(block.text, limit))
+        elif block.middle() < center:
+            omitted_above += len(block.text)
+        else:
+            omitted_below += len(block.text)
+
+    lines = []
+    if omitted_above:
+        lines.append(f"…[{omitted_above} chars omitted above]")
+    lines.append(" ".join(kept_texts))
+    if omitted_below:
+        lines.append(f"…[{omitted_below} chars omitted below]")
+    return "\n".join(lines)
 
 
 def describe_scroll(pages_below: float) -> str:
@@ -139,22 +214,23 @@ def frame_label(indexes: list[int]) -> str:
     return label
 
 
-def get_text_in_viewport(scan_result: dict) -> str:
+def get_blocks_in_viewport(scan_result: dict) -> list[TextBlock]:
     viewport = Viewport(**scan_result["viewport"])
-    texts = []
+    blocks = []
     for block in scan_result["textBlocks"]:
         bounds = Bounds(**block["boundingRectangle"])
         is_on_screen = viewport.check_if_on_screen(bounds)
         if is_on_screen:
-            texts.append(block["text"])
-    return " ".join(texts)
+            blocks.append(TextBlock(top=bounds.top, bottom=bounds.bottom, text=block["text"]))
+    return blocks
 
 
 async def scan_frames(
     page: Page, scanned_frame: Frame, scanned_result: dict
-) -> tuple[dict[int, str], dict[int, float]]:
-    """Return each frame's text and how many screens of it are below the fold."""
-    frame_texts: dict[int, str] = {}
+) -> tuple[dict[int, list[TextBlock]], dict[int, float], dict[int, float]]:
+    """Return each frame's on-screen text blocks, its screen height, and how many screens of it are below the fold."""
+    frame_blocks: dict[int, list[TextBlock]] = {}
+    height_by_frame: dict[int, float] = {}
     pages_below_by_frame: dict[int, float] = {}
     scan_script = get_js_script("scan-page.js")
 
@@ -168,13 +244,15 @@ async def scan_frames(
             try:
                 scan_result = json.loads(await evaluate_with_timeout(frame, scan_script))
             except TimeoutError:
-                frame_texts[index] = TIMED_OUT_FRAME_TEXT
+                frame_blocks[index] = [TextBlock(top=0, bottom=0, text=TIMED_OUT_FRAME_TEXT)]
+                height_by_frame[index] = 0
                 continue
 
-        frame_texts[index] = get_text_in_viewport(scan_result)
+        frame_blocks[index] = get_blocks_in_viewport(scan_result)
+        height_by_frame[index] = float(scan_result["viewport"]["height"])
         pages_below_by_frame[index] = float(scan_result.get("pagesBelow", 0))
 
-    return frame_texts, pages_below_by_frame
+    return frame_blocks, height_by_frame, pages_below_by_frame
 
 
 class PageContent:
@@ -182,31 +260,31 @@ class PageContent:
     async def get_page_content(
         page: Page, scanned_frame: Frame, scanned_result: dict, char_budget: int = 500
     ) -> str:
-        frame_texts, pages_below_by_frame = await scan_frames(page, scanned_frame, scanned_result)
+        frame_blocks, height_by_frame, pages_below_by_frame = await scan_frames(page, scanned_frame, scanned_result)
 
         filled_groups = []
         empty_indexes = []
-        for indexes, text in group_identical_frames(frame_texts):
-            if text:
-                filled_groups.append((indexes, text))
+        for indexes, blocks in group_identical_frames(frame_blocks):
+            if join_block_texts(blocks):
+                filled_groups.append((indexes, blocks))
             else:
                 empty_indexes.extend(indexes)
 
         text_lengths = []
-        for _, text in filled_groups:
-            text_lengths.append(len(text))
+        for _, blocks in filled_groups:
+            text_lengths.append(len(join_block_texts(blocks)))
         limits = fair_share(text_lengths, char_budget)
 
-        has_only_main_frame = len(frame_texts) == 1
+        has_only_main_frame = len(frame_blocks) == 1
         lines = []
-        for (indexes, text), limit in zip(filled_groups, limits):
-            shortened_text = shorten(text, limit)
+        for (indexes, blocks), limit in zip(filled_groups, limits):
             first_frame_index = indexes[0]
+            trimmed_text = trim_vertically(blocks, height_by_frame[first_frame_index], limit)
             scroll_hint = describe_scroll(pages_below_by_frame.get(first_frame_index, 0.0))
             if has_only_main_frame:
-                lines.append(f"{scroll_hint}{shortened_text}")
+                lines.append(f"{scroll_hint}{trimmed_text}")
             else:
-                lines.append(f"{frame_label(indexes)} {scroll_hint}{shortened_text}")
+                lines.append(f"{frame_label(indexes)} {scroll_hint}{trimmed_text}")
 
         if empty_indexes:
             lines.append(f"iframe[{join_indexes(empty_indexes)}] (empty)")

@@ -26,9 +26,7 @@ class Viewport:
     def check_if_on_screen(self, bounds: Bounds) -> bool:
         is_above = bounds.bottom <= 0
         is_below = bounds.top >= self.height
-        is_left = bounds.right <= 0
-        is_right = bounds.left >= self.width
-        return not (is_above or is_below or is_left or is_right)
+        return not (is_above or is_below)
 
 
 @dataclass
