@@ -10,9 +10,10 @@ from openai.types.chat import ChatCompletionMessage, ChatCompletionMessageToolCa
 
 from navgent.browser.browser_manager import BrowserManager
 from navgent.browser.browser_session import BrowserSession
+from navgent.browser.models import Observation
 from navgent.context import ToolContext
 from navgent.tool_schemas import TOOL_SCHEMAS
-from navgent.tools import TOOLS
+from navgent.tools import TOOLS, ToolResult
 
 MODEL = "gpt-4.1-mini"
 MAX_STEPS = 10
@@ -51,7 +52,7 @@ async def ask_model(client: AsyncOpenAI, prompt: str) -> ChatCompletionMessage:
     return response.choices[0].message
 
 
-async def execute_tool_call(context: ToolContext, tool_call: ChatCompletionMessageToolCall) -> str:
+async def execute_tool_call(context: ToolContext, tool_call: ChatCompletionMessageToolCall) -> ToolResult:
     print(tool_call.function.name, tool_call.function.arguments)
     tool = TOOLS[tool_call.function.name]
     arguments = json.loads(tool_call.function.arguments)
@@ -67,17 +68,18 @@ def update_prompt(prompt_data: PromptData, prompt_template: str) -> str:
     return prompt_template.format(**prompt_data.__dict__)
 
 
-def update_prompt_data(tool_call: Any, result: str | list[str], task: str) -> PromptData:
-    match tool_call.function.name:
-        case "observe_page" | "navigate":
-            return PromptData(task=task, history="None", observation=result)
-        case "execute_steps":
-            history = ""
-            for step_result in result:
-                history += f"{step_result}\n"
-            return PromptData(task=task, history=history, observation="None")
+def update_prompt_data(tool_result: ToolResult, task: str, history: list[str]) -> PromptData:
+    history_text = "\n".join(history)
 
-    return PromptData(task=task, history="None", observation="None")
+    match tool_result.tool_name:
+        case "observe_page" | "navigate":
+            observation: Observation = tool_result.output
+            return PromptData(task=task, history=history_text, observation=str(observation))
+        case "read_page_text":
+            text: str = tool_result.output
+            return PromptData(task=task, history=history_text, observation=text)
+
+    return PromptData(task=task, history=history_text, observation="None")
 
 
 current_prompt = ""
@@ -100,6 +102,7 @@ async def run(task: str) -> str | None:
                         </observation>
                     """)
     current_prompt = prompt_template.format(task=task, history="None", observation="None")
+    history: list[str] = []
 
     try:
         for _ in range(MAX_STEPS):
@@ -107,9 +110,11 @@ async def run(task: str) -> str | None:
             if not message.tool_calls:
                 return message.content
             for tool_call in message.tool_calls:
-                result = await execute_tool_call(tool_context, tool_call)
-                prompt_data = update_prompt_data(tool_call, result, task)
+                tool_result = await execute_tool_call(tool_context, tool_call)
+                history.append(tool_result.history_record)
+                prompt_data = update_prompt_data(tool_result, task, history)
                 current_prompt = update_prompt(prompt_data, prompt_template)
+
                 print(f"current_prompt: {current_prompt}")
                 print("==========================")
         return None

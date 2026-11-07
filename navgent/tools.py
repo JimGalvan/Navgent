@@ -1,41 +1,48 @@
-from typing import Any, Literal
-from pydantic import BaseModel
+from dataclasses import dataclass
 
 from navgent.browser.constants import PAGE_TEXT_CHARACTER_LIMIT
+from navgent.browser.models import Observation
 from navgent.context import ToolContext
 
 
-class ToolResult(BaseModel):
-    status: Literal["success", "error"]
-    data: dict[str, Any] | None = None
-    error: str | None = None
+@dataclass
+class ToolResult[T]:
+    tool_name: str
+    succeeded: bool
+    history_record: str
+    output: T
 
 
-async def navigate(context: ToolContext, url: str) -> str:
+async def navigate(context: ToolContext, url: str) -> ToolResult[Observation]:
     observation = await context.browser_session.attempt_navigate_and_observe(url)
-    return str(observation)
+    history_record = f'navigate {url} → "{observation.title}" {observation.url}'
+    return ToolResult(tool_name="navigate", succeeded=True, history_record=history_record, output=observation)
 
 
-async def observe_page(context: ToolContext) -> str:
+async def observe_page(context: ToolContext) -> ToolResult[Observation]:
     observation = await context.browser_session.attempt_observe_page()
-    return str(observation)
+    history_record = f'observe_page → "{observation.title}" {observation.url}'
+    return ToolResult(tool_name="observe_page", succeeded=True, history_record=history_record, output=observation)
 
 
-async def read_page_text(context: ToolContext) -> str:
+async def read_page_text(context: ToolContext) -> ToolResult[str]:
     page_text = await context.browser_session.get_page_text()
-    if len(page_text) <= PAGE_TEXT_CHARACTER_LIMIT:
-        return page_text
     omitted = len(page_text) - PAGE_TEXT_CHARACTER_LIMIT
-    return f"{page_text[:PAGE_TEXT_CHARACTER_LIMIT]}…[{omitted} chars omitted]"
+    if omitted > 0:
+        page_text = f"{page_text[:PAGE_TEXT_CHARACTER_LIMIT]}…[{omitted} chars omitted]"
+    history_record = f"read_page_text → {len(page_text)} chars"
+    return ToolResult(tool_name="read_page_text", succeeded=True, history_record=history_record, output=page_text)
 
 
-async def execute_steps(context: ToolContext, steps: list[dict]) -> list[str]:
+async def execute_steps(context: ToolContext, steps: list[dict]) -> ToolResult[list[str]]:
     session = context.browser_session
     for step in steps[:-1]:
         if step["action"] in ("click", "press"):
-            return [f"{step['action']} must be the last step; observe the page before planning more."]
+            message = f"{step['action']} must be the last step; observe the page before planning more."
+            return ToolResult(tool_name="execute_steps", succeeded=False, history_record=message, output=[message])
 
-    results = []
+    previous_url = session.page.url
+    messages = []
     for step in steps:
         action = step["action"]
         index = step["element_index"]
@@ -43,25 +50,34 @@ async def execute_steps(context: ToolContext, steps: list[dict]) -> list[str]:
 
         match action:
             case "click":
-                result = await session.click(index)
+                message = await session.click(index)
             case "fill":
-                result = await session.fill(index, value)
+                message = await session.fill(index, value)
             case "select":
-                result = await session.select(index, value)
+                message = await session.select(index, value)
             case "press":
-                result = await session.press(index, value)
+                message = await session.press(index, value)
             case _:
-                result = f"Unknown action {step['action']}"
-        results.append(result)
-    return results
+                messages.append(f"Unknown action {action}")
+                return ToolResult(tool_name="execute_steps", succeeded=False, history_record="\n".join(messages), output=messages)
+        messages.append(message)
+
+    current_url = await session.wait_for_page_to_settle()
+    if current_url != previous_url:
+        messages.append(f"URL changed to {current_url}")
+    else:
+        messages.append(f"Still on {current_url}")
+    return ToolResult(tool_name="execute_steps", succeeded=True, history_record="\n".join(messages), output=messages)
 
 
-async def switch_tab(context: ToolContext, tab_id: str) -> str:
-    return await context.browser_session.switch_tab(tab_id)
+async def switch_tab(context: ToolContext, tab_id: str) -> ToolResult[str]:
+    message = await context.browser_session.switch_tab(tab_id)
+    return ToolResult(tool_name="switch_tab", succeeded=True, history_record=message, output=message)
 
 
-async def switch_frame(context: ToolContext, frame_id: str) -> str:
-    return await context.browser_session.switch_to_iframe(frame_id)
+async def switch_frame(context: ToolContext, frame_id: str) -> ToolResult[str]:
+    message = await context.browser_session.switch_to_iframe(frame_id)
+    return ToolResult(tool_name="switch_frame", succeeded=True, history_record=message, output=message)
 
 
 TOOLS = {

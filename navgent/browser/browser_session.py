@@ -123,6 +123,10 @@ class BrowserSession:
         await self._wait_for_page_to_load(static_wait=0.25, dom_wait=500, network_wait=2_000)
         return await self._observe_current_page()
 
+    async def wait_for_page_to_settle(self) -> str:
+        await self._wait_for_page_to_load(static_wait=0.25, dom_wait=2_000, network_wait=3_000)
+        return self.page.url
+
     def _live_pages(self) -> list[Page]:
         if self._context is None:
             return []
