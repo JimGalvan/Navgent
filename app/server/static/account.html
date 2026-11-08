@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#0c0c0d" />
+    <title>Your account · Reprobe</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script type="module" src="/static/ui.js"></script>
+  </head>
+  <body data-page="account">
+    <header class="top">
+      <a class="brand" href="/">Reprobe</a>
+      <nav aria-label="Primary">
+        <a href="/login">Log in</a
+        ><a class="button" href="/register">Create account</a>
+      </nav>
+    </header>
+    <div id="preview-banner" class="preview-banner" hidden>
+      <span>Design preview · sample data, no agent execution</span
+      ><a href="/preview/new">New</a><a href="/preview/live">Live</a
+      ><a href="/preview/report">Report</a>
+    </div>
+    <main class="account-layout">
+      <aside class="account-aside">
+        <h2>From “it happened”<br />to here’s the evidence.</h2>
+        <p>One place for your reproductions, live runs, and saved results.</p>
+        <p class="mono" style="margin-top: 55px">
+          Your workspace.<br />Your runs.<br />Your evidence.
+        </p>
+      </aside>
+      <section class="account-form">
+        <h1 id="auth-title">Welcome back.</h1>
+        <p id="auth-description" class="muted">
+          Log in to your Reprobe workspace.
+        </p>
+        <form id="account-form">
+          <div class="field">
+            <label for="email">Email address</label
+            ><input
+              id="email"
+              type="email"
+              name="email"
+              autocomplete="email"
+              required
+              maxlength="254"
+              placeholder="you@company.com"
+            />
+          </div>
+          <div class="field" id="password-field">
+            <label for="password">Password</label>
+            <div class="password-wrap">
+              <input
+                id="password"
+                type="password"
+                name="password"
+                autocomplete="current-password"
+                required
+                maxlength="1024"
+              /><button
+                id="show-password"
+                type="button"
+                class="text-button"
+                aria-label="Show password"
+              >
+                Show
+              </button>
+            </div>
+          </div>
+          <div class="field" id="code-field" hidden>
+            <label for="code">Verification code</label
+            ><input
+              id="code"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              maxlength="128"
+            />
+          </div>
+          <p
+            id="auth-message"
+            class="message"
+            role="status"
+            aria-live="polite"
+          ></p>
+          <button id="auth-submit" class="button" type="submit">Log in</button>
+        </form>
+        <p class="account-foot" id="auth-switch">
+          New to Reprobe? <a href="/register">Create an account</a>
+        </p>
+        <a
+          class="quiet"
+          style="padding-left: 0"
+          href="/forgot-password"
+          id="forgot-link"
+          >Forgot your password?</a
+        >
+        <p class="notice" id="auth-config" hidden>
+          Account access is awaiting WorkOS configuration.
+          <a href="/preview/new">Explore the design preview</a>.
+        </p>
+      </section>
+    </main>
+  </body>
+</html>

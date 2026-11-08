@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#0c0c0d" />
+    <title>Live run · Reprobe</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script type="module" src="/static/ui.js"></script>
+  </head>
+  <body data-page="live">
+    <header class="top">
+      <a class="brand" href="/">Reprobe</a>
+      <nav aria-label="Primary">
+        <a data-nav="new" href="/app">New</a
+        ><a data-nav="live" href="/app">Live</a
+        ><a data-nav="reports" href="/app/reports">Reports</a
+        ><span id="account-email" class="account-name muted"></span
+        ><a id="logout" href="/logout">Log out</a>
+      </nav>
+    </header>
+    <div id="preview-banner" class="preview-banner" hidden>
+      <span>Design preview · sample data, no agent execution</span
+      ><a href="/preview/new">New</a><a href="/preview/live">Live</a
+      ><a href="/preview/report">Report</a>
+    </div>
+    <main class="wide">
+      <div class="run-header">
+        <div>
+          <div class="status">
+            <span class="dot" id="run-dot"></span
+            ><span id="run-status" role="status">Connecting</span
+            ><span class="muted">·</span
+            ><span class="mono muted" id="run-id"></span>
+          </div>
+          <h1 id="run-title">Opening your reproduction…</h1>
+        </div>
+        <div class="run-controls">
+          <time id="elapsed">00:00 / 10:00</time
+          ><button id="cancel-run" class="button danger">Stop run</button
+          ><a id="view-report" class="button secondary" hidden>View report</a>
+        </div>
+      </div>
+      <p id="run-message" class="message" role="status"></p>
+      <div class="viewer-grid">
+        <section>
+          <div class="browser-chrome">
+            <span class="mono muted" id="browser-url"
+              >Waiting for the browser</span
+            ><span class="mono" id="feed-label">LIVE</span>
+          </div>
+          <div class="browser-viewport" id="viewport">
+            <p id="screen-waiting">
+              Navgent is preparing the browser.<br />The first frame will appear
+              here.
+            </p>
+            <img id="browser-screen" alt="Live browser screenshot" hidden />
+          </div>
+          <div id="latest-action" class="browser-action mono">
+            Waiting for the first action
+          </div>
+          <section id="input-panel" class="answer-panel" hidden>
+            <h2 id="input-question">Navgent needs your input</h2>
+            <form id="input-form">
+              <label for="input-answer">Your answer</label
+              ><textarea
+                id="input-answer"
+                required
+                rows="2"
+                maxlength="10000"
+              ></textarea>
+              <div class="actions">
+                <button class="button" type="submit">Continue run</button
+                ><button
+                  class="text-button"
+                  id="decline-input"
+                  type="button"
+                  hidden
+                >
+                  Continue without a code
+                </button>
+              </div>
+            </form>
+          </section>
+        </section>
+        <aside>
+          <h2 class="section-title" id="plan-title">Plan</h2>
+          <div id="plan">
+            <p class="muted">The plan will appear as Navgent works.</p>
+          </div>
+          <div class="step-detail">
+            <h2 id="step-heading" style="font-size: 15px">About this step</h2>
+            <p id="step-detail">
+              Select a plan item to inspect its current state.
+            </p>
+          </div>
+          <h2 class="section-title">Agent stream</h2>
+          <div class="stream" id="activity" aria-live="off">
+            <p class="muted">Waiting for events…</p>
+          </div>
+          <p id="agent-output" class="muted output"></p>
+        </aside>
+      </div>
+      <footer class="run-footer">
+        Powered by Navgent · browser actions and frames update live. Reports
+        preserve available evidence after the session ends.
+      </footer>
+    </main>
+  </body>
+</html>
