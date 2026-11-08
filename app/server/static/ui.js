@@ -448,37 +448,46 @@ if (page === "new") {
 if (page === "reports") history();
 const cartMarkup =
   '<div class="demo-cart"><div class="cart-head"><b>northwind supply</b><span>Cart (1)</span></div><div class="cart-content"><div><h2>Your cart</h2><div class="cart-product"><span>Trail Pack 30L<br>Moss · qty 1</span><b>$60.00</b></div></div><div><h2>Summary</h2><div class="cart-product"><span>Subtotal</span><span>$60.00</span></div><div class="cart-product"><span>SAVE50</span><span>−$30.00</span></div><div class="cart-total"><b>Total</b><b class="bad">$42.00</b></div></div></div></div>';
-function renderPlan(todos, hostId = "plan", titleId = "plan-title", heading = "Plan") {
-  $(hostId).replaceChildren();
-  $(titleId).textContent = heading === "Evidence plan"
-    ? `${heading} · ${todos.length} steps`
-    : `${heading} · ${todos.filter((x) => x.status === "completed").length} of ${todos.length}`;
+function showPlanDetail(todo, number) {
+  $("step-heading").textContent = "Why, step " + number;
+  $("step-detail").replaceChildren(node("p", todo.reason || todo.content));
+  if (todo.source) $("step-detail").append(node("p", "Source: " + todo.source, "plan-source"));
+}
+function renderPlan(todos, selectedStep = null, onSelect = () => {}) {
+  const focusedIndex = [...$("plan").children].indexOf(document.activeElement);
+  $("plan").replaceChildren();
+  $("plan-title").textContent = `Plan · ${todos.filter((todo) => todo.status === "completed").length} of ${todos.length}`;
   todos.forEach((todo, i) => {
     const button = node("button", undefined, "plan-item");
     button.dataset.status = todo.status;
+    button.dataset.briefStep = i + 1;
     button.type = "button";
-    const copy = node("span", todo.content, "plan-copy");
-    if (todo.source) copy.append(node("small", todo.source, "plan-source"));
+    if (todo.status === "in_progress") button.setAttribute("aria-current", "step");
+    const marker = node("span", String(i + 1), "mono plan-marker");
+    if (todo.status === "completed") {
+      marker.innerHTML = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="m3 8 3 3 7-8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      marker.setAttribute("aria-label", "Completed");
+    }
+    const current = todo.current ?? todo.status === "in_progress";
+    const timing = current ? "now" : Number.isFinite(todo.duration) ? `${(todo.duration / 1000).toFixed(1)}s` : "";
     button.append(
-      node("span", String(i + 1).padStart(2, "0"), "mono"),
-      copy,
+      marker,
+      node("span", todo.content, "plan-copy"),
+      node("span", timing, "mono plan-time"),
     );
-    if (!todo.source) button.append(node("small", todo.status.replaceAll("_", " ")));
     button.onclick = () => {
-      for (const b of $(hostId).children) b.classList.remove("selected");
+      for (const b of $("plan").children) b.classList.remove("selected");
       button.classList.add("selected");
-      $("step-heading").textContent = "Why, step " + (i + 1);
-      $("step-detail").textContent =
-        todo.content + " · " + (todo.source || todo.status.replaceAll("_", " ")) + ".";
+      showPlanDetail(todo, i + 1);
+      onSelect(i + 1);
     };
-    $(hostId).append(button);
+    if (selectedStep === i + 1) {
+      button.classList.add("selected");
+      showPlanDetail(todo, i + 1);
+    }
+    $("plan").append(button);
   });
-}
-function renderEvidencePlan(brief) {
-  const steps = brief.steps.map((step) => ({
-    content: step.instruction, source: step.source, status: "pending",
-  }));
-  renderPlan(steps, "plan", "plan-title", "Evidence plan");
+  if (focusedIndex >= 0) $("plan").children[focusedIndex]?.focus({ preventScroll: true });
 }
 function renderReportBrief(run) {
   const brief = run.repro_brief;
@@ -521,18 +530,29 @@ function renderVerdict(verdict, brief) {
   host.replaceChildren();
   if (!verdict) return;
   host.append(node("h2", verdictLabels[verdict.verdict]), node("p", verdict.reason));
-  const details = node("dl");
-  if (verdict.expected) details.append(node("dt", "Expected"), node("dd", verdict.expected));
+  const details = node("dl", undefined, "verdict-values");
+  if (verdict.expected) {
+    const expected = node("div");
+    expected.append(node("dt", "Expected"), node("dd", verdict.expected));
+    details.append(expected);
+  }
   if (verdict.observed) {
     const style = verdict.verdict === "reproduced" ? "bad" : "";
     const quotes = node("dd", undefined, style);
     for (const quote of verdict.observed.split("; ")) quotes.append(node("div", quote, "observed-quote"));
-    details.append(node("dt", "Observed"), quotes);
+    const observed = node("div");
+    observed.append(node("dt", "Observed"), quotes);
+    details.append(observed);
   }
-  const step = brief?.steps[verdict.step_number - 1];
-  if (verdict.verdict !== "not_reproduced" && step)
-    details.append(node("dt", "Step " + verdict.step_number), node("dd", step.instruction));
   if (details.childElementCount) host.append(details);
+  if (verdict.verdict !== "not_reproduced") {
+    const step = brief?.steps[verdict.step_number - 1];
+    if (step) {
+      const reference = node("dl");
+      reference.append(node("dt", "Step " + verdict.step_number), node("dd", step.instruction));
+      host.append(reference);
+    }
+  }
 }
 function renderRecordings(run) {
   const downloads = $("recording-downloads");
@@ -555,7 +575,7 @@ function actionText(payload) {
   const preposition = inputActions.has(payload.action) ? " into " : " · ";
   return (payload.action || "Action") + value + (payload.target ? preposition + payload.target : "");
 }
-function renderActionLog(host, events) {
+function renderActionLog(host, events, brief) {
   const actions = [];
   let pending = null;
   for (const event of events) {
@@ -565,7 +585,8 @@ function renderActionLog(host, events) {
       pending = { payload, outcome: "Started" };
       actions.push(pending);
     } else {
-      if (!pending || pending.payload.action !== payload.action || pending.payload.target !== payload.target) {
+      if (!pending || pending.payload.action !== payload.action || pending.payload.target !== payload.target ||
+          pending.payload.brief_step && payload.brief_step && pending.payload.brief_step !== payload.brief_step) {
         pending = {};
         actions.push(pending);
       }
@@ -576,9 +597,20 @@ function renderActionLog(host, events) {
   }
   host.replaceChildren();
   let previousFields = [];
+  const groups = new Map();
   for (const { payload, outcome } of actions) {
+    const step = Number.isInteger(payload.brief_step) && payload.brief_step > 0 ? payload.brief_step : null;
+    if (!groups.has(step)) {
+      const group = node("section", undefined, "action-group");
+      group.dataset.briefStep = step || "unassigned";
+      const instruction = brief?.steps[step - 1]?.instruction;
+      const title = step ? `Step ${step}${instruction ? " · " + instruction : ""}` : "Browser actions";
+      group.append(node("h3", title, "action-group-title"));
+      groups.set(step, group);
+      host.append(group);
+    }
     const row = node("article", undefined, "action-row");
-    if (payload.brief_step) row.append(node("p", "Step " + payload.brief_step, "muted"));
+    if (step) row.append(node("p", "Step " + step, "muted"));
     row.append(node("p", actionText(payload), "action-title"));
     if (payload.reason) row.append(node("p", payload.reason, "muted"));
     row.append(node("p", outcome, "action-outcome"));
@@ -600,9 +632,9 @@ function renderActionLog(host, events) {
         comparison.append(column);
       }
       row.append(comparison);
-      if (after !== null) previousFields = after;
+      if (outcome === "Completed") previousFields = after || [];
     }
-    host.append(row);
+    groups.get(step).append(row);
   }
   if (!actions.length) host.append(node("p", "No browser actions were recorded.", "muted"));
 }
@@ -690,23 +722,52 @@ if (page === "live") {
     brief = null,
     evidenceFailed = false,
     currentBriefStep = 0,
+    selectedBriefStep = null,
+    latestFieldsSequence = 0,
     started = Date.now(),
     limitSeconds = 600,
     captureNextFrame = true;
   const capturedFrames = [];
   const seen = new Set();
+  const stepActions = new Map();
   function updateProgress() {
     const items = [...$("plan").children].filter(item => item.classList.contains("plan-item"));
     $("run-progress").value = items.length ? items.filter(item => item.dataset.status === "completed").length / items.length * 100 : 0;
   }
-  function advanceBriefStep(step) {
-    if (!Number.isInteger(step) || step <= currentBriefStep || !brief?.steps[step - 1]) return;
-    currentBriefStep = step;
-    for (const [index, item] of [...$("plan").children].entries()) {
-      item.dataset.status = index + 1 < step ? "completed" : index + 1 === step ? "in_progress" : "pending";
-      if (index + 1 === step) item.setAttribute("aria-current", "step");
-      else item.removeAttribute("aria-current");
+  function renderBriefPlan() {
+    if (!brief) return;
+    const todos = [];
+    for (const [index, step] of brief.steps.entries()) {
+      const number = index + 1;
+      const action = stepActions.get(number);
+      const duration = action?.startedAt != null && action?.finishedAt != null
+        ? Math.max(0, action.finishedAt - action.startedAt) : null;
+      todos.push({
+        content: step.instruction, source: step.source, reason: action?.reason,
+        status: number < currentBriefStep ? "completed" : number === currentBriefStep ? "in_progress" : "pending",
+        duration, current: number === currentBriefStep && !stopped,
+      });
     }
+    renderPlan(todos, selectedBriefStep || currentBriefStep, (step) => { selectedBriefStep = step; });
+    updateProgress();
+  }
+  function recordPlanAction(event) {
+    const step = event.payload.brief_step;
+    if (!Number.isInteger(step) || step < 1) return;
+    currentBriefStep = Math.max(currentBriefStep, step);
+    const action = stepActions.get(step) || { startedAt: null, finishedAt: null, sequence: 0, reason: "" };
+    const timestamp = Date.parse(event.created_at);
+    if (Number.isFinite(timestamp)) {
+      if (event.event_type === "browser.action.started") {
+        action.startedAt = action.startedAt === null ? timestamp : Math.min(action.startedAt, timestamp);
+      } else action.finishedAt = action.finishedAt === null ? timestamp : Math.max(action.finishedAt, timestamp);
+    }
+    if (event.sequence >= action.sequence) {
+      action.sequence = event.sequence;
+      action.reason = event.payload.reason || action.reason;
+    }
+    stepActions.set(step, action);
+    renderBriefPlan();
   }
   function setStatus(status) {
     $("run-status").textContent = labels[status] || status;
@@ -740,6 +801,7 @@ if (page === "live") {
       }
       refreshFrame();
     }
+    if (!evidenceFailed) renderBriefPlan();
   }
   async function refreshFrame() {
     if (preview) return;
@@ -785,24 +847,20 @@ if (page === "live") {
     if (seen.has(event.sequence)) return;
     seen.add(event.sequence);
     if (event.event_type === "task.todos") {
-      if (brief) {
-        $("execution-section").hidden = false;
-        renderPlan(event.payload.todos || [], "execution-plan", "execution-title", "Browser progress");
-      } else renderPlan(event.payload.todos || []);
+      if (!brief) renderPlan(event.payload.todos || []);
       updateProgress();
       return;
     }
     if (event.event_type === "evidence.ready") {
       brief = event.payload.brief;
-      renderEvidencePlan(brief);
-      const step = currentBriefStep;
-      currentBriefStep = 0;
-      advanceBriefStep(step);
+      renderBriefPlan();
     }
-    if (event.event_type.startsWith("browser.action.")) { advanceBriefStep(event.payload.brief_step); updateProgress(); }
+    if (event.event_type.startsWith("browser.action.")) recordPlanAction(event);
     if (event.event_type === "browser.action.completed") captureNextFrame = true;
-    if (event.event_type === "browser.action.completed" && inputActions.has(event.payload.action) && Array.isArray(event.payload.fields)) {
-      $("form-state-section").hidden = false;
+    if (event.event_type === "browser.action.completed" && inputActions.has(event.payload.action) &&
+        Array.isArray(event.payload.fields) && event.sequence > latestFieldsSequence) {
+      latestFieldsSequence = event.sequence;
+      $("form-state-section").hidden = !event.payload.fields.length;
       $("form-state").replaceChildren(...event.payload.fields.map(line => node("div", line)));
     }
     if (event.event_type === "evidence.failed") evidenceFailed = true;
@@ -817,13 +875,13 @@ if (page === "live") {
       return;
     }
     const activity = $("activity");
-    if (seen.size === 1) activity.replaceChildren();
+    if (!activity.querySelector(".event-row")) activity.replaceChildren();
     const d = appendEvent(activity, event);
     if (d) {
       if (event.event_type.startsWith("browser.action.")) {
         $("latest-action").replaceChildren(
           node("span", event.payload.action || "Action", "action-kind"),
-          node("span", " · " + (event.payload.target || "") +
+          node("span", actionText(event.payload).slice((event.payload.action || "Action").length) +
             (event.payload.brief_step ? " · step " + event.payload.brief_step : "") +
             " · " + new Date(event.created_at).toLocaleTimeString()),
         );
@@ -949,7 +1007,7 @@ if (page === "live") {
       const data = taskData(response.run.task);
       brief = response.run.repro_brief;
       renderVerdict(response.run.verdict, brief);
-      if (brief) renderEvidencePlan(brief);
+      if (brief) renderBriefPlan();
       evidenceFailed = response.run.error?.startsWith("Couldn't read the evidence") || false;
       $("run-message").textContent = response.run.error || "";
       $("run-id").textContent = shortId(runId);
@@ -1121,7 +1179,7 @@ if (page === "report") {
           if (!event.event_type.startsWith("browser.action.")) appendEvent($("report-events"), event);
         }
       }
-      renderActionLog($("action-log"), events);
+      renderActionLog($("action-log"), events, record.repro_brief);
       $("run-events-section").hidden = !$("report-events").childElementCount;
       $("run-status").parentElement.append(node("span", durationText(record), "mono muted"));
       if (record.verdict) {
