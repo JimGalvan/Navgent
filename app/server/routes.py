@@ -131,8 +131,11 @@ async def lifespan(application: FastAPI):
     repository.initialize()
     user_repository.initialize()
     credential_repository.initialize()
-    yield
-    await run_manager.shutdown()
+    await run_manager.reap_sandboxes()
+    try:
+        yield
+    finally:
+        await run_manager.shutdown()
 
 
 app = FastAPI(
@@ -229,6 +232,11 @@ async def get_dashboard(request: Request) -> Response:
 @app.get("/api/health")
 async def get_health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/health")
+async def production_health() -> dict[str, bool]:
+    return {"ok": True}
 
 
 @app.get("/api/runs", response_model=RunListResponse)

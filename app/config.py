@@ -10,8 +10,9 @@ from navgent import AgentSettings
 
 PROJECT_DIRECTORY = Path(__file__).resolve().parent
 STATIC_DIRECTORY = Path(__file__).resolve().parent / "server" / "static"
-DATABASE_PATH = PROJECT_DIRECTORY / ".data" / "reprobe.db"
-TRACE_DIRECTORY = PROJECT_DIRECTORY / ".data" / "traces"
+DATA_DIRECTORY = Path(os.getenv("REPROBE_DATA_DIR", "").strip() or PROJECT_DIRECTORY / ".data").expanduser().resolve()
+DATABASE_PATH = DATA_DIRECTORY / "reprobe.db"
+TRACE_DIRECTORY = DATA_DIRECTORY / "traces"
 CREDENTIAL_KEY_LENGTH_BYTES = 32
 
 

@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+from app.runs.sandbox import SandboxInfo
 from app.runs.schemas import RunEvent, RunRecord
 
 if TYPE_CHECKING:
@@ -29,3 +30,8 @@ class RunContext:
     mouse_controller: str | None = None
     control_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     finish_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    startup_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    sandbox: SandboxInfo | None = None
+    sandbox_attempted: bool = False
+    sandbox_started_at: float | None = None
+    cancel_requested: bool = False

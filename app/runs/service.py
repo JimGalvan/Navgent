@@ -1,11 +1,13 @@
 import asyncio
 import json
 import logging
+import time
 from collections import OrderedDict
 from collections.abc import AsyncIterator
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from starlette.datastructures import UploadFile
@@ -31,6 +33,7 @@ from app.runs.exceptions import (
 from app.runs.proof import ProofFrameInfo, proof_time, render_proof_frame
 from app.runs.repository import RunRepository
 from app.runs.runtime import build_agent_runtime
+from app.runs.sandbox import SandboxController, SandboxError
 from app.runs.schemas import (
     BrowserControlEvent,
     RecordingMetadata,
@@ -63,6 +66,7 @@ class RunManager:
             follow_up_window_seconds: float = constants.DEFAULT_FOLLOW_UP_WINDOW_SECONDS,
             credential_service: CredentialService | None = None,
             sensitive_input_window_seconds: float = constants.DEFAULT_SENSITIVE_INPUT_WINDOW_SECONDS,
+            sandbox_controller: SandboxController | None = None,
     ):
         if max_concurrent_runs < 1:
             raise ValueError("max_concurrent_runs must be at least 1")
@@ -82,6 +86,7 @@ class RunManager:
         self._active_run_ids: set[UUID] = set()
         self._completed_frames: OrderedDict[UUID, bytes] = OrderedDict()
         self._annotated_exporter = AnnotatedRecordingExporter()
+        self._sandbox_controller = sandbox_controller or SandboxController()
 
     async def create_run(
             self,
@@ -141,13 +146,51 @@ class RunManager:
 
         try:
             await self._start_session(context, run.task)
+        except asyncio.CancelledError:
+            await asyncio.shield(self._finish_context(context, RunStatus.CANCELLED))
+            raise
+        except SandboxError as error:
+            run.error = str(error)
+            await self._publish(context, "run.failed", {"error": run.error})
+            await self._finish_context(context, RunStatus.FAILED)
         except Exception:
             await self._finish_context(context, RunStatus.FAILED)
             raise
         return run
 
     async def _start_session(self, context: RunContext, task: str) -> None:
+        async with context.startup_lock:
+            if context.run.status.is_terminal:
+                return
+            await self._start_session_locked(context, task)
+
+    async def _start_session_locked(self, context: RunContext, task: str) -> None:
         run = context.run
+        sandbox_options = {}
+        if self._sandbox_controller.enabled:
+            target = run.bug_report.target_url if run.bug_report else None
+            if target is None:
+                try:
+                    target = json.loads(run.task).get("url")
+                except (ValueError, AttributeError):
+                    pass
+            parsed = urlsplit(target or "")
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                raise SandboxError("A sandboxed run requires an explicit http or https target URL.")
+            host = parsed.hostname.encode("idna").decode("ascii").lower()
+            context.sandbox_attempted = True
+            context.sandbox_started_at = time.monotonic()
+            await self._publish(context, "sandbox.starting", {"allowed_hosts": [host]})
+            try:
+                context.sandbox = await self._sandbox_controller.start(run.id, host)
+            except TimeoutError as error:
+                raise SandboxError("The sandbox did not start in time. Try the run again.") from error
+            await self._publish(context, "sandbox.started", context.sandbox.public())
+            if context.cancel_requested:
+                return
+            run.max_runtime_seconds = min(run.max_runtime_seconds, int(context.sandbox.limits["time_limit_seconds"]))
+            self._repository.save_run(run)
+            sandbox_options = {"browser_ws_endpoint": context.sandbox.ws_endpoint, "allowed_hosts": (host,)}
         context.session = build_agent_runtime(
             run.thread_id,
             user_id=run.user_id,
@@ -157,6 +200,7 @@ class RunManager:
             headless=self._headless,
             max_runtime_seconds=run.max_runtime_seconds,
             sensitive_input_window_seconds=self._sensitive_input_window_seconds,
+            **sandbox_options,
         )
         context.event_task = asyncio.create_task(self._forward_events(context), name=f"events-{run.id}")
         context.frame_task = asyncio.create_task(self._forward_frames(context), name=f"frames-{run.id}")
@@ -185,8 +229,8 @@ class RunManager:
 
         try:
             await self._start_session(context, task)
-        except Exception:
-            run.error = "The browser session could not start. Try running again."
+        except Exception as error:
+            run.error = str(error) if isinstance(error, SandboxError) else "The browser session could not start. Try running again."
             await self._publish(context, "run.failed", {"error": run.error})
             await self._finish_context(context, RunStatus.FAILED)
 
@@ -311,6 +355,7 @@ class RunManager:
             return run
         if context.run.status.is_terminal:
             return context.run
+        context.cancel_requested = True
         if context.finish_lock.locked():
             async with context.finish_lock:
                 return context.run
@@ -330,9 +375,8 @@ class RunManager:
             context.follow_up_expiry_task = None
             await self._stop_task(expiry_task)
             await self._stop_task(context.preparation_task)
-            if context.session is not None:
-                await context.session.close()
-            await self._await_cancelled_task(context.event_task)
+            await self._finish_context(context, RunStatus.CANCELLED)
+            await self._stop_task(context.event_task)
             await self._stop_task(context.frame_task)
         self._contexts.clear()
         self._active_run_ids.clear()
@@ -397,7 +441,12 @@ class RunManager:
             if context.run.status.is_terminal:
                 return
             try:
-                await self._close_browser(context)
+                async with context.startup_lock:
+                    try:
+                        await asyncio.wait_for(self._close_browser(context), timeout=30)
+                    finally:
+                        await self._stop_sandbox(context)
+                        await self._stop_task(context.frame_task)
             except Exception:
                 logging.getLogger(__name__).exception("Could not finalize browser evidence for run %s", context.run.id)
                 await self._publish(context, "browser.capture.failed", {"message": "Some final browser evidence could not be saved."})
@@ -407,6 +456,25 @@ class RunManager:
                 self._contexts.pop(context.run.id, None)
             async with context.frame_condition:
                 context.frame_condition.notify_all()
+
+    async def reap_sandboxes(self) -> None:
+        await self._sandbox_controller.reap()
+
+    async def _stop_sandbox(self, context: RunContext) -> None:
+        if not context.sandbox_attempted:
+            return
+        try:
+            await self._sandbox_controller.stop(context.run.id)
+        except Exception:
+            await self._publish(context, "sandbox.cleanup_failed", {
+                "message": "Sandbox cleanup could not be confirmed. The reaper will retry.",
+            })
+            return
+        context.sandbox_attempted = False
+        await self._publish(context, "sandbox.destroyed", {
+            "container": context.sandbox.container if context.sandbox else None,
+            "duration_seconds": max(0, time.monotonic() - context.sandbox_started_at),
+        })
 
     async def _close_browser(self, context: RunContext) -> None:
         expiry_task = context.follow_up_expiry_task

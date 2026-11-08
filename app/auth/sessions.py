@@ -95,7 +95,7 @@ LOCAL_HOSTNAMES = {"localhost", "127.0.0.1", "::1"}
 
 
 def is_local_request(request: Request) -> bool:
-    return request.base_url.hostname in LOCAL_HOSTNAMES
+    return request.base_url.hostname in LOCAL_HOSTNAMES and request.url.scheme not in {"https", "wss"}
 
 
 def build_redirect_uri(request: Request) -> str:
