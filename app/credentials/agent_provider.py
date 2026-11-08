@@ -1,9 +1,8 @@
 import asyncio
 from uuid import UUID
 
-from navgent import CredentialMetadata, CredentialSecret
-
 from app.credentials.service import CredentialService
+from navgent import CredentialMetadata, CredentialSecret
 
 
 class CredentialServiceProvider:

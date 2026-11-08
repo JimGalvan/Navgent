@@ -5,14 +5,18 @@ from collections import OrderedDict
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
+from httpx import RequestError
 from pydantic import BaseModel, Field, SecretStr, field_validator
 from starlette.concurrency import run_in_threadpool
 from workos.exceptions import BaseRequestException
-from httpx import RequestError
 
 from app.auth.sessions import (
-    get_client, is_local_request, seal_session_from_auth_response,
-    set_session_cookie, user_repository, verify_auth_configuration,
+    get_client,
+    is_local_request,
+    seal_session_from_auth_response,
+    set_session_cookie,
+    user_repository,
+    verify_auth_configuration,
 )
 from app.config import STATIC_DIRECTORY, read_workos_cookie_password
 

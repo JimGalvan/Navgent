@@ -37,7 +37,7 @@ def check():
             users = manager.list_users(email=credentials["email"], limit=1).data
             if not users:
                 manager.create_user(**credentials)
-            authentication = manager.authenticate_with_password(**credentials)
+            manager.authenticate_with_password(**credentials)
             print("Provider authentication succeeded", flush=True)
         except BaseRequestException as error:
             data = error.response_json or {}

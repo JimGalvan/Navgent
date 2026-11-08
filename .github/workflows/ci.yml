@@ -18,5 +18,17 @@ jobs:
       - run: uv sync --locked
       - run: uv run playwright install --with-deps chromium
       - run: uv run ruff check
-      - run: uv run pytest
+      - run: uv run pytest --ignore=tests/app
       - run: uv build
+
+  app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - run: uv venv app/.venv
+      - run: uv pip install --python app/.venv/bin/python -r app/requirements.txt
+      - run: app/.venv/bin/python -m playwright install --with-deps chromium
+      - run: app/.venv/bin/python -m pytest -c app/pytest.ini tests/app app/tests

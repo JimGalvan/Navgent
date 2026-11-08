@@ -2,6 +2,7 @@ from dataclasses import asdict, fields
 from datetime import datetime
 from typing import Any
 
+from app.runs.schemas import BrowserControlEvent
 from navgent import (
     AgentEvent,
     ClickAction,
@@ -11,8 +12,6 @@ from navgent import (
     ScrollAction,
     TextAction,
 )
-
-from app.runs.schemas import BrowserControlEvent
 
 
 class RunEventUtils:

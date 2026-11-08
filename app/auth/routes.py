@@ -49,6 +49,7 @@ def _start_authkit(
 @router.get("/login", include_in_schema=False)
 async def start_sign_in(request: Request):
     from fastapi.responses import FileResponse
+
     from app.config import STATIC_DIRECTORY
     return FileResponse(STATIC_DIRECTORY / "account.html", headers={"Cache-Control": "no-store"})
 
