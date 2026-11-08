@@ -27,6 +27,21 @@ BRIEF = {
     },
     "unknowns": ["The evidence does not show whether the user is signed in."],
 }
+FORM_BRIEF = {
+    "steps": [
+        {"instruction": "Open the checkout form", "source": "written step 1"},
+        {"instruction": "Type Demo into First Name", "source": "written step 2"},
+        {"instruction": "Type Tester into Last Name", "source": "video 00:07"},
+        {"instruction": "Click Continue", "source": "written step 4"},
+    ],
+    "assertion": {
+        "check": "Typing into Last Name leaves First Name unchanged",
+        "expected": "First Name: Demo; Last Name: Tester",
+        "reported_actual": "First Name: r; Last Name: (empty)",
+        "look_in": "page",
+    },
+    "unknowns": [],
+}
 
 
 def evidence_image():
@@ -130,9 +145,9 @@ def send_event(page, event_type, payload, sequence):
     page.evaluate("event => window.testRunStream.dispatchEvent(new MessageEvent(event.event_type, {data: JSON.stringify(event)}))", event)
 
 
-def action_event(sequence, phase, action, target, **payload):
+def action_event(sequence, phase, action, target, created_at="2026-11-07T12:00:00Z", **payload):
     return dict(sequence=sequence, event_type="browser.action." + phase,
-                payload=dict(action=action, target=target, **payload), created_at="2026-11-07T12:00:00Z")
+                payload=dict(action=action, target=target, **payload), created_at=created_at)
 
 
 def typing_events():
@@ -143,8 +158,8 @@ def typing_events():
         action_event(3, "started", "type", "Last Name", value="Tester", reason="Check the last-name defect.", brief_step=3),
         action_event(4, "completed", "type", "Last Name", value="Tester", reason="Check the last-name defect.", brief_step=3,
                      fields=["First Name: r", "Last Name: (empty)"]),
-        action_event(5, "completed", "type", "Password", value="", fields=["First Name: r", "Last Name: (empty)"]),
-        action_event(6, "failed", "click", "Continue", reason="Check validation.", error="Last Name is required"),
+        action_event(5, "completed", "type", "Password", value="", brief_step=3, fields=["First Name: r", "Last Name: (empty)"]),
+        action_event(6, "failed", "click", "Continue", reason="Check validation.", brief_step=4, error="Last Name is required"),
     ]
 
 
@@ -155,14 +170,17 @@ def test_live_replays_action_progress_fields_and_reconnects_without_regressing(s
     page.goto(f"http://reprobe.test/app/runs/{RUN_ID}")
     current = page.locator('#plan [aria-current="step"]')
     expect(current).to_contain_text("Remove the bottle")
+    expect(page.locator("#plan-title")).to_have_text("Plan · 2 of 4")
     expect(page.locator('#plan [data-status="completed"]')).to_have_count(2)
     expect(page.locator("#activity")).to_contain_text('type "Tester" into Last Name')
     expect(page.locator("#activity")).to_contain_text("Check the last-name defect.")
     expect(page.locator("#form-state")).to_contain_text("First Name: r")
+    expect(page.locator("#latest-action")).to_contain_text('type "Tester" into Last Name')
+    expect(page.locator("#step-detail")).to_contain_text("Check the last-name defect.")
     page.wait_for_function("Boolean(window.testRunStream)")
     for event in surface.state.events:
         send_event(page, event["event_type"], event["payload"], event["sequence"])
-    send_event(page, "browser.action.started", dict(action="click", target="Continue", brief_step=None), 7)
+    send_event(page, "browser.action.started", dict(action="click", target="Continue"), 7)
     send_event(page, "browser.action.started", dict(action="click", target="Back", brief_step=1), 8)
     expect(current).to_contain_text("Remove the bottle")
     expect(page.locator("#activity .event-row")).to_have_count(6)
@@ -174,9 +192,67 @@ def test_live_replays_action_progress_fields_and_reconnects_without_regressing(s
     capture(surface, "live-browser")
 
 
+def test_plan_uses_one_timeline_checkmarks_recorded_durations_and_forward_steps(surface):
+    page = surface.page
+    surface.state.run["status"] = "running"
+    surface.state.events = [
+        action_event(1, "started", "click", "Cart", brief_step=1, created_at="2026-11-07T12:00:00Z"),
+        action_event(2, "completed", "click", "Cart", brief_step=1, created_at="2026-11-07T12:00:08.200Z"),
+        action_event(3, "started", "type", "Coupon", value="SAVE50", reason="Apply the reported discount.", brief_step=2,
+                     created_at="2026-11-07T12:00:08.300Z"),
+    ]
+    page.goto(f"http://reprobe.test/app/runs/{RUN_ID}")
+    expect(page.locator("#plan .plan-item")).to_have_count(4)
+    expect(page.locator("#execution-plan")).to_have_count(0)
+    first = page.locator("#plan .plan-item").first
+    expect(first.locator(".plan-marker svg")).to_have_count(1)
+    expect(first.locator(".plan-marker")).to_have_text("")
+    expect(first.locator(".plan-time")).to_have_text("8.2s")
+    current = page.locator('#plan [aria-current="step"]')
+    expect(current.locator(".plan-time")).to_have_text("now")
+    assert current.evaluate("element => getComputedStyle(element).borderLeftWidth") == "2px"
+    expect(page.locator("#step-detail")).to_contain_text("Apply the reported discount.")
+    expect(page.locator("#step-detail")).to_contain_text("Source: screenshot 2")
+    page.wait_for_function("Boolean(window.testRunStream)")
+    send_event(page, "task.todos", {"todos": [{"content": "A separate task list", "status": "in_progress"}]}, 4)
+    expect(page.locator("#plan .plan-item")).to_have_count(4)
+    expect(page.locator("#plan")).not_to_contain_text("A separate task list")
+    first.focus()
+    send_event(page, "browser.action.completed", dict(action="type", target="Coupon", brief_step=2, fields=[]), 5)
+    expect(first).to_be_focused()
+    capture(surface, "single-plan-timeline")
+    page.reload()
+    expect(first.locator(".plan-time")).to_have_text("8.2s")
+    expect(current).to_contain_text("Apply SAVE50")
+
+
+def test_plan_rebuilds_the_highest_step_when_actions_precede_the_brief(surface):
+    page = surface.page
+    surface.state.run.update(status="running", repro_brief=None)
+    surface.state.events = [
+        action_event(1, "started", "type", "Last Name", brief_step=3, reason="Enter the reported last name."),
+        action_event(2, "completed", "click", "Back", brief_step=1),
+        action_event(3, "completed", "click", "Continue"),
+    ]
+    page.goto(f"http://reprobe.test/app/runs/{RUN_ID}")
+    page.wait_for_function("Boolean(window.testRunStream)")
+    ready = dict(sequence=4, event_type="evidence.ready", payload={"brief": BRIEF}, created_at="2026-11-07T12:00:00Z")
+    send_event(page, ready["event_type"], ready["payload"], ready["sequence"])
+    expect(page.locator('#plan [aria-current="step"]')).to_contain_text("Remove the bottle")
+    expect(page.locator('#plan [data-status="completed"]')).to_have_count(2)
+    surface.state.events.append(ready)
+    page.reload()
+    expect(page.locator('#plan [aria-current="step"]')).to_contain_text("Remove the bottle")
+    expect(page.locator("#step-detail")).to_contain_text("Enter the reported last name.")
+
+
 @pytest.mark.parametrize("status", ["running", "succeeded"])
 def test_report_pairs_input_snapshots_and_splits_observed_quotes(surface, status):
     surface.state.run["status"] = status
+    surface.state.run["repro_brief"] = FORM_BRIEF
+    surface.state.run["task"] = json.dumps({
+        "title": "Typing Last Name changes First Name", "url": "https://www.saucedemo.com/checkout-step-one.html",
+    })
     surface.state.events = typing_events()
     surface.state.run["verdict"] = dict(
         verdict="reproduced", expected="First Name: Demo; Last Name: Tester", step_number=3,
@@ -195,6 +271,12 @@ def test_report_pairs_input_snapshots_and_splits_observed_quotes(surface, status
     expect(after.locator(".field-changed")).to_have_count(1)
     expect(rows.nth(1)).to_contain_text("Step 3")
     expect(rows.nth(1)).to_contain_text("Check the last-name defect.")
+    groups = page.locator("#action-log .action-group")
+    expect(groups).to_have_count(3)
+    expect(groups.nth(0).locator(".action-group-title")).to_have_text("Step 2 · Type Demo into First Name")
+    expect(groups.nth(1).locator(".action-group-title")).to_have_text("Step 3 · Type Tester into Last Name")
+    expect(groups.nth(1).locator(".action-row")).to_have_count(2)
+    expect(groups.nth(2).locator(".action-group-title")).to_have_text("Step 4 · Click Continue")
     expect(rows.nth(2).locator(".action-title")).to_have_text("type into Password")
     expect(rows.nth(3)).to_contain_text("Failed")
     expect(rows.nth(3)).to_contain_text("Last Name is required")
@@ -206,10 +288,27 @@ def test_report_pairs_input_snapshots_and_splits_observed_quotes(surface, status
     expect(page.locator("#action-log .action-row").nth(1).locator(".field-changed")).to_have_count(2)
 
 
+def test_input_comparisons_use_only_the_previous_completed_input_snapshot(surface):
+    surface.state.events = [
+        action_event(1, "completed", "fill", "First Name", fields=["First Name: Demo"]),
+        action_event(2, "completed", "click", "Continue"),
+        action_event(3, "failed", "type", "Last Name", error="Field not found"),
+        action_event(4, "completed", "select", "Country", fields=["First Name: Demo", "Country: Canada"]),
+        action_event(5, "completed", "type", "Old field"),
+        action_event(6, "completed", "type", "Last Name", fields=["First Name: r"]),
+    ]
+    page = surface.page
+    page.goto(f"http://reprobe.test/app/reports/{RUN_ID}")
+    rows = page.locator("#action-log .action-row")
+    expect(rows.nth(3).locator(".field-snapshot").first).to_contain_text("First Name: Demo")
+    expect(rows.nth(3).locator(".field-snapshot").last.locator(".field-changed")).to_have_count(1)
+    expect(rows.nth(5).locator(".field-snapshot").first).to_contain_text("No field values captured")
+
+
 def test_old_actions_and_empty_password_values_render_without_fallback(surface):
     surface.state.events = [
-        action_event(1, "started", "type", "Password"),
-        action_event(2, "completed", "type", "Password"),
+        action_event(1, "started", "type", "Password", value=""),
+        action_event(2, "completed", "type", "Password", value=""),
         action_event(3, "completed", "click", "Continue"),
     ]
     page = surface.page
@@ -217,11 +316,14 @@ def test_old_actions_and_empty_password_values_render_without_fallback(surface):
     page.goto(f"http://reprobe.test/app/runs/{RUN_ID}")
     expect(page.locator("#activity")).to_contain_text("type into Password")
     expect(page.locator("#activity")).not_to_contain_text('""')
+    expect(page.locator("#activity")).not_to_contain_text("undefined")
+    expect(page.locator("body")).not_to_contain_text("secret_sauce")
     surface.state.run["status"] = "succeeded"
     page.goto(f"http://reprobe.test/app/reports/{RUN_ID}")
     expect(page.locator("#action-log .action-row")).to_have_count(2)
     expect(page.locator("#action-log .action-title").first).to_have_text("type into Password")
     expect(page.locator("#action-log .action-title").last).to_have_text("click · Continue")
+    expect(page.locator("body")).not_to_contain_text("secret_sauce")
 
 
 def test_media_only_submission_sends_all_selected_evidence(surface):
@@ -261,11 +363,12 @@ def test_live_reading_phase_and_sources_survive_browser_progress(surface):
     send_event(page, "evidence.ready", {"brief": BRIEF}, 1)
     send_event(page, "run.status", {"status": "running"}, 2)
     send_event(page, "task.todos", {"todos": [{"content": "Navigate to the cart", "status": "in_progress"}]}, 3)
-    expect(page.locator("#plan")).to_contain_text("screenshot 2")
-    expect(page.locator("#plan")).to_contain_text("video 00:07")
-    expect(page.locator("#execution-plan")).to_contain_text("Navigate to the cart")
+    expect(page.locator("#plan .plan-item")).to_have_count(4)
+    expect(page.locator("#execution-plan")).to_have_count(0)
+    expect(page.locator("#plan")).not_to_contain_text("screenshot 2")
     page.locator("#plan .plan-item").nth(2).click()
-    expect(page.locator("#step-detail")).to_contain_text("Remove the bottle · video 00:07")
+    expect(page.locator("#step-detail")).to_contain_text("Remove the bottle")
+    expect(page.locator("#step-detail")).to_contain_text("Source: video 00:07")
     capture(surface, "live-plan")
 
 

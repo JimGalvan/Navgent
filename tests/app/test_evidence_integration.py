@@ -561,7 +561,7 @@ def test_rich_actions_round_trip_through_saved_events_and_stream(client):
         BrowserActionCompletedEvent("type", "Last Name", "Tester", "Check the last-name field.", 2,
                                     ("First Name: r", "Last Name: (empty)")),
         BrowserActionFailedEvent("click", "Continue", "Last Name is required", reason="Submit the form.", brief_step=2),
-        BrowserActionCompletedEvent("type", "Password", value="", fields=("First Name: r",)),
+        BrowserActionCompletedEvent("type", "Password", value="", brief_step=2, fields=("First Name: r",)),
     ]
     run_id = create_run(client)
     finish_run(client, run_id)
@@ -573,11 +573,20 @@ def test_rich_actions_round_trip_through_saved_events_and_stream(client):
                                         reason="Check the last-name field.", brief_step=2)
     assert actions[1]["payload"]["fields"] == ["First Name: r", "Last Name: (empty)"]
     assert actions[2]["payload"]["error"] == "Last Name is required"
+    assert actions[2]["payload"]["reason"] == "Submit the form."
+    assert actions[2]["payload"]["brief_step"] == 2
+    assert "fields" not in actions[2]["payload"]
     assert actions[3]["payload"]["value"] == ""
     persisted = client.repository.list_events(UUID(run_id))
     stored = next(event for event in persisted if event.event_type == "browser.action.completed")
     assert isinstance(stored.payload["fields"], list)
     stream = client.http.get(f"/api/runs/{run_id}/stream").text
     assert json.dumps(actions[1]["payload"]) in stream
+    assert "secret_sauce" not in saved.text + stream
+    reloaded = RunRepository(client.directory / "runs.db")
+    stored = reloaded.list_events(UUID(run_id))
+    for event in stored:
+        if event.event_type == "browser.action.completed":
+            assert isinstance(event.payload["fields"], list)
     client.user.id = uuid4()
     assert client.http.get(f"/api/runs/{run_id}/events").status_code == 404
