@@ -5,7 +5,7 @@ Installed root-owned as /usr/local/bin/sandboxctl. The app user may run it throu
 so every argument is validated here and the sandbox flags can't be changed by the caller.
 
     sandboxctl setup
-    sandboxctl start --run <run id> --host <target host>
+    sandboxctl start --run <run id> --host <target host>    (also opens HTTPS to the fixed CDN list)
     sandboxctl stop --run <run id>
     sandboxctl reap
 """
@@ -43,6 +43,20 @@ MAX_AGE_SECONDS = 960
 READY_SECONDS = 30
 READY_LINE = "Listening on"
 ALLOWED_PORTS = "80,443"
+ASSET_PORT = "443"
+# Public, read-only CDNs a target page may load scripts, styles, fonts and images from.
+# Keep in sync with ASSET_HOSTS in navgent/browser/constants.py, which limits what the browser may request from them.
+ASSET_HOSTS = (
+    "cdn.jsdelivr.net",
+    "unpkg.com",
+    "cdnjs.cloudflare.com",
+    "cdn.tailwindcss.com",
+    "code.jquery.com",
+    "ajax.googleapis.com",
+    "fonts.googleapis.com",
+    "fonts.gstatic.com",
+    "esm.sh",
+)
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 HOST_PATTERN = re.compile(r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
 
@@ -123,6 +137,26 @@ def allow_rule(sandbox_ip: str, target_ip: str, run_id: str) -> list[str]:
     ]
 
 
+def asset_rule(sandbox_ip: str, asset_ip: str, run_id: str) -> list[str]:
+    return [
+        "DOCKER-USER", "-s", sandbox_ip, "-d", asset_ip, "-p", "tcp", "--dport", ASSET_PORT,
+        "-m", "comment", "--comment", rule_comment(run_id), "-j", "ACCEPT",
+    ]
+
+
+def resolve_asset_hosts(target_host: str) -> dict[str, str]:
+    """Pin each CDN to one public address for this run, skipping any that don't resolve."""
+    resolved = {}
+    for asset_host in ASSET_HOSTS:
+        if asset_host == target_host:
+            continue
+        try:
+            resolved[asset_host] = resolve_public_ip(asset_host)
+        except SandboxError:
+            continue
+    return resolved
+
+
 def base_rules() -> list[list[str]]:
     forward = ["DOCKER-USER", "-s", SUBNET, "-m", "comment", "--comment", BASE_RULE, "-j", "DROP"]
     to_host = [
@@ -132,7 +166,12 @@ def base_rules() -> list[list[str]]:
     return [forward, to_host]
 
 
-def build_run_command(run_id: str, host: str, sandbox_ip: str, target_ip: str) -> list[str]:
+def build_run_command(
+        run_id: str, host: str, sandbox_ip: str, target_ip: str, asset_ips: dict[str, str] | None = None,
+) -> list[str]:
+    asset_entries = []
+    for asset_host, asset_ip in (asset_ips or {}).items():
+        asset_entries += ["--add-host", f"{asset_host}:{asset_ip}"]
     return [
         "docker", "run", "--detach", "--rm",
         "--runtime", "runsc",
@@ -144,6 +183,7 @@ def build_run_command(run_id: str, host: str, sandbox_ip: str, target_ip: str) -
         "--network", NETWORK,
         "--ip", sandbox_ip,
         "--add-host", f"{host}:{target_ip}",
+        *asset_entries,
         "--dns", "127.0.0.1",
         "--cpus", CPUS,
         "--memory", MEMORY,
@@ -201,10 +241,13 @@ def start(run_id: str, host: str) -> dict:
     run_id = validate_run_id(run_id)
     host = validate_host(host)
     target_ip = resolve_public_ip(host)
+    asset_ips = resolve_asset_hosts(host)
     sandbox_ip = pick_ip(list_sandboxes())
     run(["iptables", "-I"] + allow_rule(sandbox_ip, target_ip, run_id))
     try:
-        run(build_run_command(run_id, host, sandbox_ip, target_ip))
+        for asset_ip in sorted(set(asset_ips.values())):
+            run(["iptables", "-I"] + asset_rule(sandbox_ip, asset_ip, run_id))
+        run(build_run_command(run_id, host, sandbox_ip, target_ip, asset_ips))
         wait_until_ready(run_id)
         endpoint = published_endpoint(run_id)
     except Exception:
@@ -215,6 +258,7 @@ def start(run_id: str, host: str) -> dict:
         "ws_endpoint": endpoint,
         "runtime": "gVisor (runsc)",
         "allowed_hosts": [host],
+        "asset_hosts": list(asset_ips),
         "limits": {
             "cpus": float(CPUS),
             "memory_mb": 1536,
