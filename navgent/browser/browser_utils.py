@@ -19,6 +19,20 @@ async def evaluate_with_timeout(frame, script, argument=None):
         ) from None
 
 
+async def evaluate_handle_with_timeout(frame, script, argument=None):
+    try:
+        async with asyncio.timeout(EVALUATE_TIMEOUT_SECONDS):
+            return await frame.evaluate_handle(script, argument)
+    except TimeoutError:
+        raise TimeoutError(
+            f"The page stopped responding to scripts after {EVALUATE_TIMEOUT_SECONDS} seconds"
+        ) from None
+
+
+def normalize_host(host: str) -> str:
+    return host.rstrip(".").encode("idna").decode("ascii").lower()
+
+
 def normalize_key(value: str) -> str:
     keys = []
     for part in value.strip().split("+"):

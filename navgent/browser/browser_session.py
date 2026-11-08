@@ -1,19 +1,21 @@
 import asyncio
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from functools import cache
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from playwright.async_api import BrowserContext, Page, Request
+from playwright.async_api import BrowserContext, ElementHandle, Page, Request
 from playwright.async_api import Frame as PlaywrightFrame
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from navgent.browser.browser_manager import BrowserManager
 from navgent.browser.browser_utils import (
+    evaluate_handle_with_timeout,
     evaluate_with_timeout,
     get_js_script,
+    normalize_host,
     normalize_key,
 )
 from navgent.browser.constants import (
@@ -36,8 +38,24 @@ from navgent.browser.recording import (
 )
 from navgent.browser.request_blocks import BlockedRequest, RequestBlockTracker
 from navgent.browser.target_registry import TargetRegistry
+from navgent.redaction import SecretRedactor
 
 logger = logging.getLogger(__name__)
+
+MASK_FIELD_SCRIPT = "field => field.style.setProperty('-webkit-text-security', 'disc', 'important')"
+
+
+def url_origin(url: str) -> tuple[str, str, int] | None:
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError:
+        return None
+    if parts.scheme not in {"http", "https"} or not parts.hostname:
+        return None
+    if port is None:
+        port = 443 if parts.scheme == "https" else 80
+    return parts.scheme, normalize_host(parts.hostname), port
 
 
 class BrowserSession:
@@ -49,8 +67,11 @@ class BrowserSession:
             recording_dir: Path | None = None,
             allowed_hosts: tuple[str, ...] = (),
             on_request_blocked: Callable[[BlockedRequest], None] | None = None,
+            redactor: SecretRedactor | None = None,
     ):
         self._browser_manager = browser_manager
+        self.redactor = redactor or SecretRedactor()
+        self._sensitive_controls: list[tuple[PlaywrightFrame, ElementHandle]] = []
         self._trace_path = trace_path
         self._recording_dir = recording_dir
         self._request_blocks = RequestBlockTracker(allowed_hosts) if allowed_hosts else None
@@ -227,7 +248,12 @@ class BrowserSession:
                 title = await page.title()
             except Exception:
                 title = ""
-            tabs.append(Tab(id=tab_id, selected=page is self._page, title=title, url=page.url))
+            tabs.append(Tab(
+                id=tab_id,
+                selected=page is self._page,
+                title=self.redactor.redact(title),
+                url=self.redactor.redact(page.url),
+            ))
         return tabs
 
     def _collect_iframes(self) -> list[Iframe]:
@@ -244,8 +270,8 @@ class BrowserSession:
                     id=frame_id,
                     selected=frame is active_frame,
                     main=frame is main_frame,
-                    name=frame.name or "",
-                    url=frame.url,
+                    name=self.redactor.redact(frame.name or ""),
+                    url=self.redactor.redact(frame.url),
                 )
             )
         return iframes
@@ -275,8 +301,9 @@ class BrowserSession:
                     "domcontentloaded", timeout=LOAD_TIMEOUT_MS
                 )
                 await active_iframe.wait_for_load_state("load", timeout=LOAD_TIMEOUT_MS)
+                sensitive_controls = await self._sensitive_controls_in(active_iframe)
                 return await evaluate_with_timeout(
-                    active_iframe, self._get_script("scan-page.js")
+                    active_iframe, self._get_script("scan-page.js"), sensitive_controls
                 )
             except Exception as exception:
                 if attempt == final_attempt:
@@ -319,7 +346,7 @@ class BrowserSession:
         return updated_list
 
     async def _observe_current_page(self) -> Observation:
-        scan_result = json.loads(await self._scan_page())
+        scan_result = self.redactor.redact_data(json.loads(await self._scan_page()))
         unique_raw_elements = self._remove_duplicate_links(scan_result["elements"])
 
         elements = []
@@ -333,12 +360,13 @@ class BrowserSession:
         elements_outside_viewport_count = len(elements) - len(self._elements)
 
         self._reconcile_current_page()
-        url = self.page.url
-        title = await self.page.title()
+        url = self.redactor.redact(self.page.url)
+        title = self.redactor.redact(await self.page.title())
         pages_below = float(scan_result.get("pagesBelow", 0))
         page_content = await PageContent.get_page_content(
             self._page, self._active_frame(), scan_result, char_budget=500
         )
+        page_content = self.redactor.redact(page_content)
         tabs = await self._collect_tabs()
         iframes = self._collect_iframes()
 
@@ -359,19 +387,41 @@ class BrowserSession:
         return None
 
     async def get_text_in_viewport(self) -> str:
-        return await evaluate_with_timeout(
+        text = await evaluate_with_timeout(
             self._active_frame(), self._get_script("get-text-in-viewport.js")
         )
+        return self.redactor.redact(text)
 
     async def get_page_text(self) -> str:
-        return await evaluate_with_timeout(
+        text = await evaluate_with_timeout(
             self._active_frame(), self._get_script("get-page-text.js")
         )
+        return self.redactor.redact(text)
 
     async def _read_form_fields(self) -> list[dict]:
-        return await evaluate_with_timeout(
-            self._active_frame(), self._get_script("get-form-values.js")
+        frame = self._active_frame()
+        sensitive_controls = await self._sensitive_controls_in(frame)
+        fields = await evaluate_with_timeout(
+            frame, self._get_script("get-form-values.js"), sensitive_controls
         )
+        return self.redactor.redact_data(fields)
+
+    async def _sensitive_controls_in(self, frame: PlaywrightFrame) -> list[ElementHandle]:
+        """Return the credential-filled controls of one frame, forgetting those whose document is gone."""
+        kept = []
+        found = []
+        for control_frame, control in self._sensitive_controls:
+            if control_frame.is_detached():
+                continue
+            try:
+                await evaluate_with_timeout(control, "field => field.isConnected")
+            except Exception:
+                continue
+            kept.append((control_frame, control))
+            if control_frame is frame:
+                found.append(control)
+        self._sensitive_controls = kept
+        return found
 
     @staticmethod
     def _describe_form_field(field: dict) -> str:
@@ -490,6 +540,69 @@ class BrowserSession:
         await self.page.keyboard.insert_text(value)
         return f"Filled {self._describe_element(element_index)}"
 
+    async def fill_credential(
+            self,
+            element_index: int,
+            target_host: str,
+            read_value: Callable[[str], Awaitable[str]],
+    ) -> str:
+        """Type a saved value into an observed field after confirming where the keystrokes will land.
+
+        The value is read only once the field's frame is on the target host and the field has focus.
+        The field is excluded from later page reads and masked before the value is inserted.
+        """
+        element = self.get_stored_element(element_index)
+        if element is None:
+            raise ValueError(f"Element [{element_index}] is not available")
+
+        frame = self._active_frame()
+        self._require_credential_frame(frame, target_host)
+        control = await self._find_credential_control(frame, element)
+        self._sensitive_controls.append((frame, control))
+
+        await self._click_element(element_index)
+        focused = await evaluate_with_timeout(control, self._get_script("check-credential-focus.js"))
+        if not focused:
+            raise RuntimeError(f"Element [{element_index}] did not take focus, so the saved credential was not typed")
+        await evaluate_with_timeout(control, MASK_FIELD_SCRIPT)
+
+        hostname = self._require_credential_frame(frame, target_host)
+        value = await read_value(hostname)
+        try:
+            await self.page.keyboard.press("Control+A")
+            await self.page.keyboard.insert_text(value)
+        except Exception:
+            raise RuntimeError("The browser could not type the saved credential") from None
+        return f"Filled {self._describe_element(element_index)} with a saved credential"
+
+    def _require_credential_frame(self, frame: PlaywrightFrame, target_host: str) -> str:
+        """Return the frame's hostname if it and every parent frame share the target page's origin."""
+        target_host = normalize_host(target_host)
+        page_origin = url_origin(self.page.url)
+        if page_origin is None or page_origin[1] != target_host:
+            raise PermissionError(f"Saved credentials can only be typed on {target_host}")
+
+        current = frame
+        while current is not None:
+            if current.is_detached():
+                raise RuntimeError("The selected frame is no longer on the page")
+            if url_origin(current.url) != page_origin:
+                raise PermissionError(
+                    f"Saved credentials cannot be typed into a frame from an origin other than {target_host}"
+                )
+            current = current.parent_frame
+        return page_origin[1]
+
+    async def _find_credential_control(self, frame: PlaywrightFrame, element: Element) -> ElementHandle:
+        handle = await evaluate_handle_with_timeout(
+            frame, self._get_script("find-credential-field.js"), {"x": element.cx, "y": element.cy},
+        )
+        control = handle.as_element()
+        if control is None:
+            await handle.dispose()
+            raise ValueError(f"Element [{element.index}] is not an input or textarea on screen")
+        return control
+
     async def type_text(self, element_index: int, value: str) -> str:
         await self._click_element(element_index)
         await self.page.keyboard.press("Control+A")
@@ -541,7 +654,8 @@ class BrowserSession:
 
         await page.bring_to_front()
         self._reset_page_state(page)
-        return f"Switched to tab with title {await page.title()} and url {page.url}"
+        title = self.redactor.redact(await page.title())
+        return f"Switched to tab with title {title} and url {self.redactor.redact(page.url)}"
 
     async def switch_to_iframe(self, iframe_id: str) -> str:
         frame = self._iframes.get(iframe_id)
@@ -552,7 +666,7 @@ class BrowserSession:
         if frame is not self.page.main_frame:
             await (await frame.frame_element()).scroll_into_view_if_needed()
         self._invalidate_elements()
-        return f"Switched to frame {iframe_id} with url {frame.url}"
+        return f"Switched to frame {iframe_id} with url {self.redactor.redact(frame.url)}"
 
     async def user_click(self, horizontal: float, vertical: float) -> str:
         await self.page.mouse.click(horizontal, vertical)
@@ -601,3 +715,4 @@ class BrowserSession:
 
         self._reset_page_state()
         self._tabs.reset()
+        self._sensitive_controls = []

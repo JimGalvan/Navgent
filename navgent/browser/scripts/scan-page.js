@@ -1,4 +1,4 @@
-(async () => {
+(async (sensitiveControls) => {
     const MAX_ELEMENTS = 2000;
     const MAX_LABEL_CHARS = 120;
     const MAX_VALUE_CHARS = 40;
@@ -34,6 +34,7 @@
     const INFERRED = 'inferred';
 
     const keptElements = new WeakSet();
+    const sensitiveElements = new Set(sensitiveControls || []);
 
     function collapseWhitespace(value) {
         return (value || '').replace(/\s+/g, ' ').trim();
@@ -146,6 +147,7 @@
     }
 
     function checkIfPrivateField(element) {
+        if (sensitiveElements.has(element)) return true;
         if (element.dataset.navgentSensitive) return true;
         if (PRIVATE_INPUT_TYPES.includes(element.type)) return true;
 
@@ -477,4 +479,4 @@
         viewport: {width: innerWidth, height: innerHeight},
         pagesBelow: calculatePagesBelow(findScrollingContainer())
     });
-})()
+})
