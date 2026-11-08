@@ -9,6 +9,7 @@ From the Navgent repository root, using Python 3.12 or newer:
 ```powershell
 uv venv app/.venv --python .venv/Scripts/python.exe
 uv pip install --python app/.venv/Scripts/python.exe -r app/requirements.txt
+uv sync
 $env:REPROBE_PREVIEW = 'true'
 $env:PYTHONDONTWRITEBYTECODE = '1'
 app/.venv/Scripts/python.exe -B -m uvicorn app.main:app --host 127.0.0.1 --port 8787
@@ -20,22 +21,33 @@ For real accounts, add the settings listed in `app/.env.example` to the existing
 
 Set `OPENAI_API_KEY` for Navgent's configured model provider in the same root `.env`. No separate `app/.env` is loaded. Install Playwright Chromium if needed with `app/.venv/Scripts/python.exe -B -m playwright install chromium` before executing real runs. To keep browser binaries inside the application directory, set `PLAYWRIGHT_BROWSERS_PATH` to the absolute path of `app/.cache/browsers` during installation and server startup.
 
-Accounts are provided through WorkOS. Local user mappings, run records, and events use `app/.data/reprobe.db`; completed JPEG frames use `app/.data/evidence/`. Fresh databases are initialized automatically. This initial web runner uses a single server process; do not launch it with multiple workers.
+Accounts are provided through WorkOS. Local user mappings, run records, and events use `app/.data/reprobe.db`; completed browser JPEG frames use `app/.data/evidence/`. Uploaded files and evidence key frames use `app/.data/runs/<run-id>/uploads/` and `app/.data/runs/<run-id>/evidence/`. Fresh databases are initialized automatically, and existing run databases receive the additional evidence columns on startup. This web runner uses a single server process; do not launch it with multiple workers.
 
 ## Implemented
 
 - Landing page, registration/login, verification and password recovery, reproduction form, live viewer, report history, and evidence report.
 - Local, licensed Geist fonts extracted from the supplied mock; shared responsive styles based on its charcoal/lime design.
 - Adapted account/session, run orchestration, persistence, frame streaming, ownership, retry, and input-handling code from the previous web application. Source license is included in `app/LICENSE`.
-- Navgent session integration for written tasks, typed plan/action events, browser frames, cancellation, questions and verification codes.
+- Navgent session integration for reproduction briefs, typed plan/action events, browser frames, cancellation, questions and verification codes.
 - Completed-run cleanup and persistent final frames. Execution completion is presented separately from any independently verified reproduction verdict.
-- Local-only video/image selection and preview, including ordering screenshots. Media is not uploaded or interpreted in this build. Written steps are required for execution.
+- Combined written steps, ordered screenshots and recording uploads. The backend reads the evidence before starting a browser, and the live viewer shows the reading phase and the resulting plan with sources.
+- Saved reproduction briefs, planned assertions, unknowns and labeled JPEG key frames. Reruns validate and reuse the saved brief and copy the evidence to the new run without another model call. Reports distinguish submitted evidence and reported actual behavior from browser observations.
+
+## Evidence input and configuration
+
+The form submits multipart data to `POST /api/reproductions`: `target_url`, `expected`, `actual`, `steps_text`, optional repeated `screenshots` files and one optional `video`. `max_runtime_seconds` defaults to 600; optional repeated `credential_ids` select saved target-site credentials. The original JSON `POST /api/runs` endpoint remains available for direct agent tasks.
+
+Uploads are saved before analysis. Screenshots accept PNG, JPEG, WebP, GIF, BMP and TIFF, up to 10 files of 10 MB each. Recordings accept MP4, WebM and MOV, up to 50 MB and two minutes. The backend checks these limits, bounds total request size before multipart parsing, and rejects unreadable or overly expensive recordings. The pipeline selects up to six screenshot frames and ten video frames.
+
+Set `REPROBE_EVIDENCE_MODEL` in the existing root `.env` to override `AgentSettings.evidence_model` (default `openai:gpt-5-nano`), alongside `REPROBE_STRONG_MODEL` and `REPROBE_FAST_MODEL`. Evidence analysis runs on the application backend, usually in a few seconds to around 30 seconds, with a 90-second timeout. Model errors, invalid briefs and unreadable media fail the run as "Couldn't read the evidence" without starting a browser. Error reports omit provider request contents and image data URLs.
+
+The run record exposes `bug_report`, `repro_brief` and `evidence_frames`. Key frames are available to the run owner at `GET /api/runs/<run-id>/evidence/<1-based-number>.jpg`. Only uploaded files and JPEG evidence are written to disk; model message image data URLs are neither stored nor logged. Live events include `evidence.ready` and `evidence.failed`, and run status includes `reading_evidence`. Stop remains available while analysis is pending.
 
 ## Boundaries and next agent integration
 
 The preview verdict and sample checkout are illustrative. Real reports show actual run output/events and available frames, with no confirmed verdict until structured assertion evidence exists. Recording, HAR, annotation and generated-script downloads are unavailable rather than simulated in real runs. Arbitrary pause/resume, remote sandboxing and telemetry are not implemented.
 
-Claude's upcoming media agents can integrate through an application endpoint that accepts ordered media and returns editable steps. The current run adapter accepts written steps as a JSON task with URL, expected behavior, and user-reported actual behavior. Keep those inputs separate from independently observed evidence. Production media upload storage, limits, and ownership checks should be implemented with that endpoint.
+Evidence plans start automatically after analysis; editing the brief before execution is not implemented. The submitted URL remains separate from the model output and is always used to build the reproduction task.
 
 Useful follow-up agent contracts are structured assertion results and supported evidence-capture hooks. The app consumes only public session methods. Navgent currently chooses its own file-tool workspace under `navgent/`; per-run workspace injection should be added by the agent owner before enabling agent file-tool use for multiple users. The web runner does not provide an isolated execution sandbox or network allowlist. Keep real execution on trusted test targets during development.
 
@@ -45,10 +57,10 @@ Saved target-site credentials use the ported credential endpoints and optional e
 
 ```powershell
 $env:PYTHONDONTWRITEBYTECODE = '1'
-app/.venv/Scripts/python.exe -B -m pytest -c app/pytest.ini app/tests --basetemp=app/.cache/test-runs
+app/.venv/Scripts/python.exe -B -m pytest -c app/pytest.ini app/tests tests/app --basetemp=app/.cache/test-runs
 ```
 
-The 25 local regression checks use a fake session, real application routes and temporary SQLite databases. They exercise signup responses, verification handoff, login, input requests, completion, persisted events/frames, account separation, unconfigured auth, and origin checks without making paid model calls or contacting WorkOS.
+The local regression checks use fake sessions, real application routes and temporary SQLite databases. They exercise accounts, input requests, completion, persisted events/frames, account separation, origin checks, evidence uploads, analysis failure, cancellation, and reruns without paid model calls or WorkOS requests. The evidence tests patch `navgent.evidence.pipeline.build_evidence_model`, while still decoding real images and generated MP4, WebM and MOV clips. UI checks require Playwright Chromium and verify media submission, evidence plans, reading/error states and report layouts.
 
 Separate opt-in scripts perform real external tests when explicitly approved:
 
