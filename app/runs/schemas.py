@@ -3,9 +3,12 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
+from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, SecretStr, model_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
+
+from app.clock import utc_now
 from navgent import (
     CONTROL_KEYS,
     MAX_CONTROL_SCROLL_PIXELS,
@@ -13,11 +16,10 @@ from navgent import (
     VIEWPORT_WIDTH,
 )
 
-from app.clock import utc_now
-
 
 class RunStatus(StrEnum):
     QUEUED = "queued"
+    READING_EVIDENCE = "reading_evidence"
     RUNNING = "running"
     WAITING_FOR_INPUT = "waiting_for_input"
     READY_FOR_FOLLOW_UP = "ready_for_follow_up"
@@ -36,12 +38,40 @@ class RunStatus(StrEnum):
         }
 
 
+class ReproductionInput(BaseModel):
+    target_url: str = Field(min_length=1, max_length=1_000)
+    expected: str = Field(min_length=1, max_length=1_200)
+    actual: str = Field(default="", max_length=1_200)
+    steps_text: str = Field(default="", max_length=6_000)
+
+    @field_validator("target_url")
+    @classmethod
+    def validate_target_url(cls, value: str) -> str:
+        parsed = urlsplit(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError("Use an http or https app URL")
+        return value
+
+
+class StoredBugReport(ReproductionInput):
+    screenshot_names: list[str] = Field(default_factory=list)
+    video_name: str | None = None
+
+
+class EvidenceFrame(BaseModel):
+    filename: str
+    label: str
+
+
 class RunRecord(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     thread_id: UUID = Field(default_factory=uuid4)
     user_id: UUID | None = None
     credential_ids: list[UUID] = Field(default_factory=list, max_length=25)
     task: str
+    bug_report: StoredBugReport | None = None
+    repro_brief: dict[str, Any] | None = None
+    evidence_frames: list[EvidenceFrame] = Field(default_factory=list)
     status: RunStatus = RunStatus.QUEUED
     max_runtime_seconds: int
     final_output: str | None = None

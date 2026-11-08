@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 @dataclass
 class RunContext:
     run: RunRecord
-    session: BrowserAgentSession
+    session: BrowserAgentSession | None = None
     events: list[RunEvent] = field(default_factory=list)
     event_condition: asyncio.Condition = field(default_factory=asyncio.Condition)
     frame_condition: asyncio.Condition = field(default_factory=asyncio.Condition)
@@ -23,6 +23,7 @@ class RunContext:
     next_event_sequence: int = 1
     event_task: asyncio.Task[None] | None = None
     frame_task: asyncio.Task[None] | None = None
+    preparation_task: asyncio.Task[None] | None = None
     follow_up_expiry_task: asyncio.Task[None] | None = None
     sensitive_input_request_id: UUID | None = None
     mouse_controller: str | None = None

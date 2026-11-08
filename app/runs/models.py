@@ -15,6 +15,9 @@ class RunModel(Base):
     user_id: Mapped[UUID | None] = mapped_column(index=True)
     credential_ids: Mapped[list[str]] = mapped_column(JSON)
     task: Mapped[str]
+    bug_report: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    repro_brief: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    evidence_frames: Mapped[list[dict[str, str]]] = mapped_column(JSON)
     status: Mapped[str]
     max_runtime_seconds: Mapped[int]
     final_output: Mapped[str | None]

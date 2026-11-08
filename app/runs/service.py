@@ -2,27 +2,20 @@ import asyncio
 from collections import OrderedDict
 from collections.abc import AsyncIterator
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from navgent import (
-    BrowserControlAppliedEvent,
-    MouseUpAction,
-    SessionNotReadyForFollowUpError,
-    SessionNotWaitingForInputError,
-    SessionStatusEvent,
-)
-from navgent import (
-    SensitiveInputNotPendingError as SessionSensitiveInputNotPendingError,
-)
+from starlette.datastructures import UploadFile
 
 from app.clock import utc_now
-from app.config import DATABASE_PATH
+from app.config import DATABASE_PATH, read_agent_settings
 from app.credentials.exceptions import CredentialNotFoundError
 from app.credentials.service import CredentialService
 from app.runs import constants
 from app.runs.context import RunContext
 from app.runs.event_utils import RunEventUtils
+from app.runs.evidence import EvidenceUploadError, RunEvidenceStore, validate_video
 from app.runs.exceptions import (
     RunCapacityReachedError,
     RunNotFoundError,
@@ -33,7 +26,25 @@ from app.runs.exceptions import (
 )
 from app.runs.repository import RunRepository
 from app.runs.runtime import build_agent_runtime
-from app.runs.schemas import BrowserControlEvent, RunEvent, RunRecord, RunStatus
+from app.runs.schemas import (
+    BrowserControlEvent,
+    ReproductionInput,
+    RunEvent,
+    RunRecord,
+    RunStatus,
+    StoredBugReport,
+)
+from navgent import (
+    BrowserControlAppliedEvent,
+    MouseUpAction,
+    SessionNotReadyForFollowUpError,
+    SessionNotWaitingForInputError,
+    SessionStatusEvent,
+)
+from navgent import (
+    SensitiveInputNotPendingError as SessionSensitiveInputNotPendingError,
+)
+from navgent.evidence import ReproBrief, analyze_evidence, build_reproduction_task
 
 
 class RunManager:
@@ -53,6 +64,7 @@ class RunManager:
         if sensitive_input_window_seconds <= 0:
             raise ValueError("sensitive_input_window_seconds must be greater than 0")
         self._repository = repository
+        self._evidence = RunEvidenceStore(repository.data_directory)
         self._headless = headless
         self._contexts: dict[UUID, RunContext] = {}
         self._manager_lock = asyncio.Lock()
@@ -69,6 +81,11 @@ class RunManager:
             max_runtime_seconds: int,
             user_id: UUID | None = None,
             credential_ids: list[UUID] | None = None,
+            *,
+            bug_report: ReproductionInput | None = None,
+            screenshots: list[UploadFile] | None = None,
+            video: UploadFile | None = None,
+            reuse_evidence: RunRecord | None = None,
     ) -> RunRecord:
         async with self._manager_lock:
             if len(self._active_run_ids) >= self._max_concurrent_runs:
@@ -81,33 +98,96 @@ class RunManager:
             run = RunRecord(
                 task=task.strip(), max_runtime_seconds=max_runtime_seconds,
                 user_id=user_id, credential_ids=selected_credential_ids,
+                bug_report=StoredBugReport(**bug_report.model_dump()) if bug_report else None,
             )
-            session = build_agent_runtime(
-                run.thread_id,
-                user_id=user_id,
-                credential_ids=tuple(selected_credential_ids),
-                credential_service=self._credential_service,
-                headless=self._headless,
-                max_runtime_seconds=max_runtime_seconds,
-                sensitive_input_window_seconds=self._sensitive_input_window_seconds,
-            )
-            context = RunContext(run=run, session=session)
+            context = RunContext(run=run)
             self._contexts[run.id] = context
             self._active_run_ids.add(run.id)
             try:
                 self._repository.save_run(run)
                 await self._publish(context, "run.created", {"task": run.task, "status": run.status.value})
-                context.event_task = asyncio.create_task(self._forward_events(context), name=f"events-{run.id}")
-                context.frame_task = asyncio.create_task(self._forward_frames(context), name=f"frames-{run.id}")
-                await session.start(run.task)
             except Exception:
                 self._contexts.pop(run.id, None)
                 self._active_run_ids.discard(run.id)
-                await session.close()
-                await self._stop_task(context.event_task)
-                await self._stop_task(context.frame_task)
                 raise
+
+        if bug_report is not None:
+            await self._set_status(context, RunStatus.READING_EVIDENCE)
+            try:
+                if reuse_evidence is not None:
+                    await asyncio.to_thread(self._evidence.copy_evidence, reuse_evidence, run)
+                else:
+                    await self._evidence.save_uploads(run, screenshots or [], video)
+                self._repository.save_run(run)
+            except Exception as exception:
+                await self._fail_evidence(context, exception)
+                return run
+            if not run.status.is_terminal:
+                context.preparation_task = asyncio.create_task(
+                    self._prepare_reproduction(context), name=f"evidence-{run.id}",
+                )
             return run
+
+        try:
+            await self._start_session(context, run.task)
+        except Exception:
+            await self._finish_context(context)
+            raise
+        return run
+
+    async def _start_session(self, context: RunContext, task: str) -> None:
+        run = context.run
+        context.session = build_agent_runtime(
+            run.thread_id,
+            user_id=run.user_id,
+            credential_ids=tuple(run.credential_ids),
+            credential_service=self._credential_service,
+            headless=self._headless,
+            max_runtime_seconds=run.max_runtime_seconds,
+            sensitive_input_window_seconds=self._sensitive_input_window_seconds,
+        )
+        context.event_task = asyncio.create_task(self._forward_events(context), name=f"events-{run.id}")
+        context.frame_task = asyncio.create_task(self._forward_frames(context), name=f"frames-{run.id}")
+        await context.session.start(task)
+
+    async def _prepare_reproduction(self, context: RunContext) -> None:
+        run = context.run
+        try:
+            async with asyncio.timeout(90):
+                report = self._evidence.build_report(run)
+                reused = run.repro_brief is not None
+                if reused:
+                    brief = ReproBrief.model_validate(run.repro_brief)
+                else:
+                    if report.video_path is not None:
+                        await asyncio.to_thread(validate_video, report.video_path)
+                    analysis = await analyze_evidence(report, read_agent_settings(run.thread_id))
+                    brief = ReproBrief.model_validate(analysis.brief.model_dump())
+                    await asyncio.to_thread(self._evidence.save_analysis, run, analysis)
+                task = build_reproduction_task(report, brief)
+                self._repository.save_run(run)
+                await self._publish(context, "evidence.ready", {"brief": brief.model_dump(), "reused": reused})
+        except Exception as exception:
+            await self._fail_evidence(context, exception)
+            return
+
+        try:
+            await self._start_session(context, task)
+        except Exception:
+            run.error = "The browser session could not start. Try running again."
+            await self._publish(context, "run.failed", {"error": run.error})
+            await self._set_status(context, RunStatus.FAILED)
+            await self._finish_context(context)
+
+    async def _fail_evidence(self, context: RunContext, exception: Exception) -> None:
+        message = "Couldn't read the evidence. Check your files and steps, then try again."
+        if isinstance(exception, EvidenceUploadError):
+            message = f"Couldn't read the evidence. {exception}"
+        context.run.error = message
+        await self._publish(context, "evidence.failed", {"error": message})
+        await self._publish(context, "run.failed", {"error": message})
+        await self._set_status(context, RunStatus.FAILED)
+        await self._finish_context(context)
 
     async def submit_input(self, run_id: UUID, user_id: UUID, answer: str) -> RunRecord:
         context = self._require_waiting_context(run_id, user_id)
@@ -221,6 +301,12 @@ class RunManager:
             return run
         if context.run.status.is_terminal:
             return context.run
+        if context.session is None:
+            await self._stop_task(context.preparation_task)
+            await self._publish(context, "run.cancelled", {})
+            await self._set_status(context, RunStatus.CANCELLED)
+            await self._finish_context(context)
+            return context.run
         await context.session.cancel()
         await self._await_cancelled_task(context.event_task)
         return context.run
@@ -231,7 +317,9 @@ class RunManager:
             expiry_task = context.follow_up_expiry_task
             context.follow_up_expiry_task = None
             await self._stop_task(expiry_task)
-            await context.session.close()
+            await self._stop_task(context.preparation_task)
+            if context.session is not None:
+                await context.session.close()
             await self._await_cancelled_task(context.event_task)
             await self._stop_task(context.frame_task)
         self._contexts.clear()
@@ -239,6 +327,7 @@ class RunManager:
         self._completed_frames.clear()
 
     async def _forward_events(self, context: RunContext) -> None:
+        assert context.session is not None
         try:
             async for event in context.session.events():
                 if isinstance(event, BrowserControlAppliedEvent):
@@ -281,6 +370,7 @@ class RunManager:
                 await self._finish_context(context)
 
     async def _forward_frames(self, context: RunContext) -> None:
+        assert context.session is not None
         async for frame in context.session.screen_frames():
             async with context.frame_condition:
                 context.latest_frame = frame
@@ -291,12 +381,13 @@ class RunManager:
         expiry_task = context.follow_up_expiry_task
         context.follow_up_expiry_task = None
         await self._stop_task(expiry_task)
-        await context.session.close()
-        await self._await_cancelled_task(context.event_task)
-        await self._await_cancelled_task(context.frame_task)
-        latest_frame = context.session.get_latest_frame()
-        if latest_frame is not None:
-            context.latest_frame = latest_frame
+        if context.session is not None:
+            await context.session.close()
+            await self._await_cancelled_task(context.event_task)
+            await self._await_cancelled_task(context.frame_task)
+            latest_frame = context.session.get_latest_frame()
+            if latest_frame is not None:
+                context.latest_frame = latest_frame
         if context.latest_frame is not None:
             evidence = DATABASE_PATH.parent / "evidence"
             evidence.mkdir(parents=True, exist_ok=True)
@@ -342,6 +433,8 @@ class RunManager:
                 max_runtime_seconds=run.max_runtime_seconds,
                 user_id=user_id,
                 credential_ids=list(run.credential_ids),
+                bug_report=run.bug_report,
+                reuse_evidence=run if run.bug_report else None,
             )
         except CredentialNotFoundError as exception:
             raise RunNotRerunnableError(
@@ -375,6 +468,13 @@ class RunManager:
     def get_run(self, run_id: UUID, user_id: UUID) -> RunRecord:
         _, run = self._resolve_owned(run_id, user_id)
         return run
+
+    def get_evidence_frame(self, run_id: UUID, user_id: UUID, number: int) -> Path:
+        _, run = self._resolve_owned(run_id, user_id)
+        path = self._evidence.frame_path(run, number)
+        if path is None or not path.is_file():
+            raise RunNotFoundError("This evidence frame was not found")
+        return path
 
     def _require_waiting_context(self, run_id: UUID, user_id: UUID) -> RunContext:
         context, _ = self._resolve_owned(run_id, user_id)

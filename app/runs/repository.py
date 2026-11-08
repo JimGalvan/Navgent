@@ -1,7 +1,7 @@
 from pathlib import Path
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import inspect, select, text
 
 from app.database.engine import build_engine, build_session_factory
 from app.database.models import Base
@@ -20,6 +20,22 @@ class RunRepository:
         Base.metadata.create_all(
             self._engine, tables=[RunModel.__table__, RunEventModel.__table__]
         )
+        columns = set()
+        for column in inspect(self._engine).get_columns("runs"):
+            columns.add(column["name"])
+        additions = {
+            "bug_report": "JSON",
+            "repro_brief": "JSON",
+            "evidence_frames": "JSON NOT NULL DEFAULT '[]'",
+        }
+        with self._engine.begin() as connection:
+            for name, definition in additions.items():
+                if name not in columns:
+                    connection.execute(text(f"ALTER TABLE runs ADD COLUMN {name} {definition}"))
+
+    @property
+    def data_directory(self) -> Path:
+        return self._database_path.parent / "runs"
 
     def save_run(self, run: RunRecord) -> None:
         with self._session_factory.begin() as session:
@@ -82,12 +98,18 @@ class RunRepository:
 
     @staticmethod
     def _build_run_model(run: RunRecord) -> RunModel:
+        frames = []
+        for frame in run.evidence_frames:
+            frames.append(frame.model_dump())
         return RunModel(
             id=run.id,
             thread_id=run.thread_id,
             user_id=run.user_id,
             credential_ids=RunRepository._stringify_ids(run.credential_ids),
             task=run.task,
+            bug_report=run.bug_report.model_dump() if run.bug_report else None,
+            repro_brief=run.repro_brief,
+            evidence_frames=frames,
             status=run.status.value,
             max_runtime_seconds=run.max_runtime_seconds,
             final_output=run.final_output,

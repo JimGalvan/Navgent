@@ -1,6 +1,6 @@
 import json
-import os
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -8,12 +8,15 @@ from uuid import UUID
 
 from fastapi import (
     FastAPI,
+    File,
+    Form,
     Header,
+    HTTPException,
     Request,
     Response,
+    UploadFile,
     WebSocket,
     WebSocketDisconnect,
-    HTTPException,
     status,
 )
 from fastapi.exceptions import RequestValidationError
@@ -67,7 +70,7 @@ from app.runs.exceptions import (
     SensitiveInputNotPendingError,
 )
 from app.runs.repository import RunRepository
-from app.runs.schemas import RunEvent, RunRecord
+from app.runs.schemas import ReproductionInput, RunEvent, RunRecord
 from app.runs.service import RunManager
 from app.server.constants import (
     CONTROL_CLOSE_RUN_NOT_FOUND,
@@ -95,6 +98,7 @@ from app.server.schemas import (
     UpdateCredentialRequest,
     UserInputRequest,
 )
+from app.server.uploads import UploadLimitMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +141,7 @@ app = FastAPI(
 app.add_middleware(AuthKitSessionMiddleware)
 app.include_router(auth_routes.router)
 from app.auth.password import router as password_router
+
 app.include_router(password_router)
 
 _RUN_ERROR_STATUSES = {
@@ -282,10 +287,55 @@ async def create_run(request: CreateRunRequest, user: CurrentUser) -> RunRespons
     return _build_run_response(run)
 
 
+@app.post("/api/reproductions", response_model=RunResponse, status_code=status.HTTP_202_ACCEPTED)
+async def create_reproduction(
+    user: CurrentUser,
+    target_url: str = Form(...),
+    expected: str = Form(...),
+    actual: str = Form(""),
+    steps_text: str = Form(""),
+    max_runtime_seconds: int = Form(600, ge=30, le=1_800),
+    credential_ids: list[UUID] | None = Form(None, max_length=25),
+    screenshots: list[UploadFile] | None = File(None),
+    video: UploadFile | None = File(None),
+) -> RunResponse:
+    try:
+        report = ReproductionInput(
+            target_url=target_url, expected=expected, actual=actual, steps_text=steps_text,
+        )
+    except ValidationError as exception:
+        raise RequestValidationError(exception.errors()) from exception
+    title = "Reproduction"
+    for line in report.steps_text.splitlines():
+        if line.strip():
+            title = line.strip()[:140]
+            break
+    task = json.dumps({
+        "title": title, "url": report.target_url, "steps": report.steps_text,
+        "expected": report.expected, "actual": report.actual,
+    })
+    run = await run_manager.create_run(
+        task=task,
+        max_runtime_seconds=max_runtime_seconds,
+        user_id=user.id,
+        credential_ids=credential_ids,
+        bug_report=report,
+        screenshots=screenshots,
+        video=video,
+    )
+    return _build_run_response(run)
+
+
 @app.get("/api/runs/{run_id}", response_model=RunResponse)
 async def get_run(run_id: UUID, user: CurrentUser) -> RunResponse:
     run = await run_in_threadpool(run_manager.get_run, run_id, user.id)
     return _build_run_response(run)
+
+
+@app.get("/api/runs/{run_id}/evidence/{number}.jpg")
+async def get_evidence_frame(run_id: UUID, number: int, user: CurrentUser) -> FileResponse:
+    path = await run_in_threadpool(run_manager.get_evidence_frame, run_id, user.id, number)
+    return FileResponse(path, media_type="image/jpeg", headers=NO_CACHE_HEADERS)
 
 
 @app.get("/api/runs/{run_id}/stream")
@@ -532,11 +582,12 @@ class OriginMiddleware:
 
 
 app.add_middleware(OriginMiddleware)
+app.add_middleware(UploadLimitMiddleware)
 
 
 @app.get("/api/capabilities")
 async def capabilities():
-    return {"auth_configured": bool(os.getenv("WORKOS_API_KEY") and os.getenv("WORKOS_CLIENT_ID") and os.getenv("WORKOS_COOKIE_PASSWORD")), "media_analysis": False}
+    return {"auth_configured": bool(os.getenv("WORKOS_API_KEY") and os.getenv("WORKOS_CLIENT_ID") and os.getenv("WORKOS_COOKIE_PASSWORD")), "media_analysis": True}
 
 
 @app.get("/preview", include_in_schema=False)

@@ -35,6 +35,7 @@ def read_agent_settings(thread_id: UUID) -> AgentSettings:
     return AgentSettings(
         strong_model=os.getenv("REPROBE_STRONG_MODEL", "").strip() or AgentSettings.strong_model,
         fast_model=os.getenv("REPROBE_FAST_MODEL", "").strip() or AgentSettings.fast_model,
+        evidence_model=os.getenv("REPROBE_EVIDENCE_MODEL", "").strip() or AgentSettings.evidence_model,
         headless=read_headless_setting(),
         browser_channel=read_browser_channel_setting(),
         trace_path=trace_path,
