@@ -1243,4 +1243,7 @@ body[data-page="reports"] .reports-workspace { max-width: 1240px; margin: auto; 
 .proof-values dt { color: var(--muted); font-size: 13px; }
 .proof-values dd { margin: 4px 0 0; font-family: "Geist Mono", monospace; overflow-wrap: anywhere; }
 #evidence-error { white-space: pre-line; margin-bottom: 16px; }
+.sandbox-panel > summary { cursor: pointer; min-height: 44px; padding: 12px 0; font-size: 14px; color: var(--body-muted); }
+.sandbox-panel > dl { margin: 0; padding: 12px 0 20px; font-size: 13px; }
+.report-details .sandbox-panel summary > span { float: none; margin-left: 0; font-size: inherit; }
 [aria-invalid="true"] { border-color: var(--red); }

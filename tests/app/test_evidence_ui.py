@@ -369,6 +369,29 @@ def test_rejected_upload_names_the_file_and_keeps_accepted_evidence(surface):
     capture(surface, "evidence-rejection")
 
 
+def test_live_sandbox_events_update_status_and_label_blocked_requests(surface):
+    surface.state.run["status"] = "running"
+    page = surface.page
+    page.goto(f"http://reprobe.test/app/runs/{RUN_ID}")
+    page.wait_for_function("window.testRunStream !== undefined")
+    send_event(page, "sandbox.starting", {"allowed_hosts": ["shop.example.test"]}, 40)
+    expect(page.locator("#sandbox-status")).to_have_text("Starting")
+    send_event(page, "sandbox.started", {"runtime": "gVisor (runsc)", "allowed_hosts": ["shop.example.test"],
+        "limits": {"cpus": 1.5, "memory_mb": 1536, "pids": 256, "time_limit_seconds": 900}}, 41)
+    expect(page.locator("#sandbox-status")).to_have_text("Running")
+    send_event(page, "sandbox.request_blocked", {"host": "other.example.test", "brief_step": 2}, 42)
+    expect(page.locator("#activity")).to_contain_text("Blocked by sandbox: other.example.test")
+    expect(page.locator("#activity")).to_contain_text("Step 2")
+    expect(page.locator("#sandbox-status")).to_have_text("Running")
+    send_event(page, "sandbox.destroyed", {"duration_seconds": 21}, 43)
+    expect(page.locator("#sandbox-status")).to_have_text("Destroyed")
+    page.locator("#sandbox-panel summary").click()
+    expect(page.locator("#sandbox-values")).to_contain_text("gVisor (runsc)")
+    expect(page.locator("#sandbox-values")).to_contain_text("shop.example.test")
+    send_event(page, "run.status", {"status": "succeeded", "verdict": None}, 44)
+    capture(surface, "sandbox-live")
+
+
 def test_live_reading_phase_and_sources_survive_browser_progress(surface):
     page = surface.page
     surface.state.run.update(status="reading_evidence", repro_brief=None, evidence_frames=[])

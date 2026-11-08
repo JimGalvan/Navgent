@@ -290,3 +290,30 @@ def test_single_run_omits_history_and_history_failure_is_disclosed(surface):
     expect(page.locator("#bug-history-summary")).to_have_text("Run history unavailable")
     page.locator("#bug-history-summary").click()
     expect(page.locator("#bug-history")).to_contain_text("Reload to try again")
+
+
+def test_saved_sandbox_state_and_blocked_request_are_readable(surface):
+    run = surface.runs[0]
+    surface.events = [
+        {"sequence": 1, "event_type": "sandbox.started", "payload": {
+            "runtime": "gVisor (runsc)", "allowed_hosts": ["store.example.test"],
+            "limits": {"cpus": 1.5, "memory_mb": 1536, "pids": 256, "time_limit_seconds": 900},
+        }},
+        {"sequence": 2, "event_type": "sandbox.request_blocked", "payload": {"host": "other.example.test", "brief_step": 2}},
+        {"sequence": 3, "event_type": "sandbox.destroyed", "payload": {"container": "reprobe-test", "duration_seconds": 14}},
+    ]
+    for event in surface.events:
+        event["created_at"] = "2026-11-08T12:00:00Z"
+    page = surface.page
+    page.goto(f"http://reprobe.test/app/reports/{run['id']}")
+    expect(page.locator("#sandbox-status")).to_have_text("Destroyed")
+    expect(page.locator("#sandbox-panel")).not_to_have_attribute("open", "")
+    page.locator("#sandbox-panel summary").click()
+    expect(page.locator("#sandbox-values")).to_contain_text("gVisor (runsc)")
+    expect(page.locator("#sandbox-values")).to_contain_text("1.5 vCPU")
+    expect(page.locator("#sandbox-values")).to_contain_text("1536 MB")
+    expect(page.locator("#sandbox-values")).to_contain_text("900 seconds")
+    page.locator("#run-events-section summary").click()
+    expect(page.locator("#report-events")).to_contain_text("Blocked by sandbox: other.example.test")
+    expect(page.locator("#report-events")).to_contain_text("Step 2")
+    capture(surface, "sandbox-report")

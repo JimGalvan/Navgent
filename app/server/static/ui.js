@@ -1,4 +1,5 @@
 import { mountRecordings } from "./recordings.js";
+import { renderSandbox } from "./sandbox.js";
 import { arrangeReportSteps, renderBugHistory, renderChecks, renderFindingProof, renderReportHeader, renderReports, setupEnvironmentRerun, setupProof } from "./reports.js";
 
 const $ = (id) => document.getElementById(id);
@@ -651,6 +652,10 @@ function renderActionLog(host, events, brief) {
   if (!actions.length) host.append(node("p", "No browser actions were recorded.", "muted"));
 }
 function eventDescription(event) {
+  if (event.event_type === "sandbox.request_blocked") {
+    const step = event.payload.brief_step;
+    return { title: `Blocked by sandbox: ${event.payload.host || "off-target host"}`, detail: step ? `Step ${step}` : "" };
+  }
   const p = event.payload || {};
   if (
     event.event_type === "agent.message.delta" ||
@@ -666,6 +671,10 @@ function eventDescription(event) {
     "browser.observation": "Observed page",
     "browser.frame.changed": "Frame changed",
     "run.created": "Run created",
+    "sandbox.starting": "Starting sandbox",
+    "sandbox.started": "Sandbox ready",
+    "sandbox.destroyed": "Sandbox destroyed",
+    "sandbox.cleanup_failed": "Sandbox cleanup needs attention",
     "evidence.ready": "Evidence plan ready",
     "reproduction.verdict": "Verdict reported",
     "browser.click": "Clicked",
@@ -731,6 +740,7 @@ function appendEvent(host, event) {
   return d;
 }
 if (page === "live") {
+  const seenSandboxEvents = [];
   let runId = location.pathname.split("/").pop(),
     source = null,
     stopped = false,
@@ -864,6 +874,10 @@ if (page === "live") {
   function receive(event) {
     if (seen.has(event.sequence)) return;
     seen.add(event.sequence);
+    if (event.event_type.startsWith("sandbox.")) {
+      seenSandboxEvents.push(event);
+      renderSandbox(seenSandboxEvents);
+    }
     if (event.event_type === "task.todos") {
       if (!brief) renderPlan(event.payload.todos || []);
       updateProgress();
@@ -1041,6 +1055,7 @@ if (page === "live") {
       if (!stopped) {
         source = new EventSource(response.stream_url);
         const types = [
+          "sandbox.starting", "sandbox.started", "sandbox.destroyed", "sandbox.cleanup_failed", "sandbox.request_blocked",
           "run.created",
           "evidence.ready",
           "reproduction.verdict",
@@ -1211,6 +1226,7 @@ if (page === "report") {
         }
       }
       renderActionLog($("action-log"), events, record.repro_brief);
+      renderSandbox(events);
       arrangeReportSteps(record, events);
       $("run-events-section").hidden = !$("report-events").childElementCount;
       $("event-count").textContent = `${events.length} event${events.length === 1 ? "" : "s"}`;
