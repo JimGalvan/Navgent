@@ -76,7 +76,7 @@ def surface(browser, request):
         "evidence_frames": [{"filename": "frame-01.jpg", "label": "screenshot 2"}, {"filename": "frame-02.jpg", "label": "video 00:07"}],
         "final_output": "The browser run finished. See the saved evidence for the result.",
     }
-    state = SimpleNamespace(run=record, uploads=[], frame=True, video=None)
+    state = SimpleNamespace(run=record, uploads=[], frame=True, video=None, events=[])
 
     def handle(route):
         path = urlsplit(route.request.url).path
@@ -92,6 +92,8 @@ def surface(browser, request):
             route.fulfill(json={"run": state.run, "stream_url": f"/api/runs/{RUN_ID}/stream", "screen_url": f"/api/runs/{RUN_ID}/screen.jpg"})
         elif path == f"/api/runs/{RUN_ID}/stream":
             route.fulfill(content_type="text/event-stream", body="")
+        elif path == f"/api/runs/{RUN_ID}/events":
+            route.fulfill(json=state.events)
         elif "/recordings/" in path and state.video:
             route.fulfill(content_type="video/webm", body=state.video)
         elif "/evidence/" in path or path.endswith("screen.jpg") and state.frame:
@@ -126,6 +128,97 @@ def capture(surface, name):
 def send_event(page, event_type, payload, sequence):
     event = {"event_type": event_type, "payload": payload, "sequence": sequence, "created_at": "2026-11-07T12:00:00Z"}
     page.evaluate("event => window.testRunStream.dispatchEvent(new MessageEvent(event.event_type, {data: JSON.stringify(event)}))", event)
+
+
+def action_event(sequence, phase, action, target, **payload):
+    return dict(sequence=sequence, event_type="browser.action." + phase,
+                payload=dict(action=action, target=target, **payload), created_at="2026-11-07T12:00:00Z")
+
+
+def typing_events():
+    return [
+        action_event(1, "started", "type", "First Name", value="Demo", reason="Enter the first name.", brief_step=2),
+        action_event(2, "completed", "type", "First Name", value="Demo", reason="Enter the first name.", brief_step=2,
+                     fields=["First Name: Demo", "Last Name: (empty)"]),
+        action_event(3, "started", "type", "Last Name", value="Tester", reason="Check the last-name defect.", brief_step=3),
+        action_event(4, "completed", "type", "Last Name", value="Tester", reason="Check the last-name defect.", brief_step=3,
+                     fields=["First Name: r", "Last Name: (empty)"]),
+        action_event(5, "completed", "type", "Password", value="", fields=["First Name: r", "Last Name: (empty)"]),
+        action_event(6, "failed", "click", "Continue", reason="Check validation.", error="Last Name is required"),
+    ]
+
+
+def test_live_replays_action_progress_fields_and_reconnects_without_regressing(surface):
+    surface.state.run["status"] = "running"
+    surface.state.events = typing_events()[:4]
+    page = surface.page
+    page.goto(f"http://reprobe.test/app/runs/{RUN_ID}")
+    current = page.locator('#plan [aria-current="step"]')
+    expect(current).to_contain_text("Remove the bottle")
+    expect(page.locator('#plan [data-status="completed"]')).to_have_count(2)
+    expect(page.locator("#activity")).to_contain_text('type "Tester" into Last Name')
+    expect(page.locator("#activity")).to_contain_text("Check the last-name defect.")
+    expect(page.locator("#form-state")).to_contain_text("First Name: r")
+    page.wait_for_function("Boolean(window.testRunStream)")
+    for event in surface.state.events:
+        send_event(page, event["event_type"], event["payload"], event["sequence"])
+    send_event(page, "browser.action.started", dict(action="click", target="Continue", brief_step=None), 7)
+    send_event(page, "browser.action.started", dict(action="click", target="Back", brief_step=1), 8)
+    expect(current).to_contain_text("Remove the bottle")
+    expect(page.locator("#activity .event-row")).to_have_count(6)
+    page.reload()
+    expect(current).to_contain_text("Remove the bottle")
+    expect(page.locator("#form-state")).to_contain_text("First Name: r")
+
+
+@pytest.mark.parametrize("status", ["running", "succeeded"])
+def test_report_pairs_input_snapshots_and_splits_observed_quotes(surface, status):
+    surface.state.run["status"] = status
+    surface.state.events = typing_events()
+    surface.state.run["verdict"] = dict(
+        verdict="reproduced", expected="First Name: Demo; Last Name: Tester", step_number=3,
+        observed="First Name: r; Last Name: (empty); Error: Last Name is required",
+        reason="Typing into Last Name changed First Name.",
+    )
+    page = surface.page
+    page.goto(f"http://reprobe.test/app/reports/{RUN_ID}")
+    rows = page.locator("#action-log .action-row")
+    expect(rows).to_have_count(4)
+    expect(rows.nth(0).locator(".field-snapshot").first).to_contain_text("No field values captured")
+    before, after = rows.nth(1).locator(".field-snapshot").all()
+    expect(before).to_contain_text("First Name: Demo")
+    expect(after).to_contain_text("First Name: r")
+    expect(before.locator(".field-changed")).to_have_count(1)
+    expect(after.locator(".field-changed")).to_have_count(1)
+    expect(rows.nth(1)).to_contain_text("Step 3")
+    expect(rows.nth(1)).to_contain_text("Check the last-name defect.")
+    expect(rows.nth(2).locator(".action-title")).to_have_text("type into Password")
+    expect(rows.nth(3)).to_contain_text("Failed")
+    expect(rows.nth(3)).to_contain_text("Last Name is required")
+    expect(page.locator(".observed-quote")).to_have_count(3)
+    expect(page.locator(".observed-quote").first).to_have_text("First Name: r")
+    capture(surface, "report-input-changes")
+    page.reload()
+    expect(page.locator("#action-log .action-row")).to_have_count(4)
+    expect(page.locator("#action-log .action-row").nth(1).locator(".field-changed")).to_have_count(2)
+
+
+def test_old_actions_and_empty_password_values_render_without_fallback(surface):
+    surface.state.events = [
+        action_event(1, "started", "type", "Password"),
+        action_event(2, "completed", "type", "Password"),
+        action_event(3, "completed", "click", "Continue"),
+    ]
+    page = surface.page
+    surface.state.run["status"] = "running"
+    page.goto(f"http://reprobe.test/app/runs/{RUN_ID}")
+    expect(page.locator("#activity")).to_contain_text("type into Password")
+    expect(page.locator("#activity")).not_to_contain_text('""')
+    surface.state.run["status"] = "succeeded"
+    page.goto(f"http://reprobe.test/app/reports/{RUN_ID}")
+    expect(page.locator("#action-log .action-row")).to_have_count(2)
+    expect(page.locator("#action-log .action-title").first).to_have_text("type into Password")
+    expect(page.locator("#action-log .action-title").last).to_have_text("click · Continue")
 
 
 def test_media_only_submission_sends_all_selected_evidence(surface):

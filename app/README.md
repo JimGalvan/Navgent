@@ -45,6 +45,10 @@ The run record exposes `bug_report`, `repro_brief` and `evidence_frames`. The ow
 
 The live viewer and report use the latest `reproduction.verdict` event. The run's `verdict` includes the expected and observed values, a reason, and an optional brief step. A completed run without an event reads as inconclusive. Failed, cancelled and timed-out runs show their execution status.
 
+Action events retain their value, reason, brief step and visible form fields. The Live screen advances the evidence plan from brief step numbers and shows the latest form snapshot. Reports pair each input action with the previous completed input's fields and mark changed lines. Observed verdict quotes appear on separate lines. Password actions preserve the agent's empty value.
+
+The owner can fetch the ordered saved event history at `GET /api/runs/<run-id>/events`. The Live screen reads this history before subscribing to updates, and ignores repeated event sequences during reconnects.
+
 After the browser closes, the app saves the tab-ordered list of WebM filenames in `recordings`. The report plays the first video and links each tab's download at `GET /api/runs/<run-id>/recordings/<1-based-number>.webm`. Only the run owner can access these files. Reruns reuse the submitted evidence and generate their own recordings and verdict.
 
 ## Boundaries and next agent integration

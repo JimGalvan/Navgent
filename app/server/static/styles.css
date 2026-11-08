@@ -594,6 +594,42 @@ time {
 .plan-item.selected {
   color: var(--lime);
 }
+.plan-item[data-status="in_progress"] {
+  color: var(--lime);
+  border-left: 2px solid var(--lime);
+  padding-left: 10px;
+}
+.plan-item[data-status="completed"] .mono::after {
+  content: " ✓";
+}
+.form-values {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  margin-bottom: 24px;
+}
+.action-row {
+  border-bottom: 1px solid var(--line);
+  padding: 18px 0;
+  overflow-wrap: anywhere;
+}
+.action-row p { margin: 0 0 6px; }
+.action-title { font-weight: 500; }
+.action-reason { margin-top: 6px !important; }
+.action-outcome { font-size: 12px; color: var(--muted); }
+.action-error { color: var(--red); }
+.field-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 14px;
+}
+.field-snapshot h3 { font-size: 12px; color: var(--muted); margin: 0 0 8px; }
+.field-snapshot .mono { font-size: 12px; white-space: pre-wrap; }
+.field-changed { background: #c7f4510d; }
+.change-label { color: var(--lime); font-family: Geist, sans-serif; font-size: 10px; }
+@media (max-width: 600px) {
+  .field-comparison { grid-template-columns: 1fr; }
+}
 .plan-item .mono {
   width: 22px;
   flex: none;

@@ -550,7 +550,9 @@ function renderVerdict(verdict, brief) {
   if (verdict.expected) details.append(node("dt", "Expected"), node("dd", verdict.expected));
   if (verdict.observed) {
     const style = verdict.verdict === "reproduced" ? "bad" : "";
-    details.append(node("dt", "Observed"), node("dd", verdict.observed, style));
+    const quotes = node("dd", undefined, style);
+    for (const quote of verdict.observed.split("; ")) quotes.append(node("div", quote, "observed-quote"));
+    details.append(node("dt", "Observed"), quotes);
   }
   const step = brief?.steps[verdict.step_number - 1];
   if (verdict.verdict !== "not_reproduced" && step)
@@ -571,6 +573,63 @@ function renderRecordings(run) {
     link.download = `recording-${number}.webm`;
     downloads.append(link);
   }
+}
+const inputActions = new Set(["type", "fill", "select"]);
+function actionText(payload) {
+  const value = payload.value ? " " + JSON.stringify(payload.value) : "";
+  const preposition = inputActions.has(payload.action) ? " into " : " · ";
+  return (payload.action || "Action") + value + (payload.target ? preposition + payload.target : "");
+}
+function renderActionLog(host, events) {
+  const actions = [];
+  let pending = null;
+  for (const event of events) {
+    if (!event.event_type.startsWith("browser.action.")) continue;
+    const payload = event.payload;
+    if (event.event_type === "browser.action.started") {
+      pending = { payload, outcome: "Started" };
+      actions.push(pending);
+    } else {
+      if (!pending || pending.payload.action !== payload.action || pending.payload.target !== payload.target) {
+        pending = {};
+        actions.push(pending);
+      }
+      pending.payload = payload;
+      pending.outcome = event.event_type === "browser.action.failed" ? "Failed" : "Completed";
+      pending = null;
+    }
+  }
+  host.replaceChildren();
+  let previousFields = [];
+  for (const { payload, outcome } of actions) {
+    const row = node("article", undefined, "action-row");
+    if (payload.brief_step) row.append(node("p", "Step " + payload.brief_step, "muted"));
+    row.append(node("p", actionText(payload), "action-title"));
+    if (payload.reason) row.append(node("p", payload.reason, "muted"));
+    row.append(node("p", outcome, "action-outcome"));
+    if (payload.error) row.append(node("p", payload.error, "action-error"));
+    if (inputActions.has(payload.action)) {
+      const after = outcome === "Completed" && Array.isArray(payload.fields) ? payload.fields : null;
+      const comparison = node("div", undefined, "field-comparison");
+      for (const [label, lines, other] of [["Before", previousFields, after], ["After", after, previousFields]]) {
+        const column = node("div", undefined, "field-snapshot");
+        column.append(node("h3", label));
+        if (lines === null) column.append(node("p", "No snapshot captured", "muted"));
+        else if (!lines.length) column.append(node("p", "No field values captured", "muted"));
+        else for (const line of lines) {
+          const changed = other !== null && !other.includes(line);
+          const field = node("div", line, "mono" + (changed ? " field-changed" : ""));
+          if (changed) field.append(node("small", " Changed", "change-label"));
+          column.append(field);
+        }
+        comparison.append(column);
+      }
+      row.append(comparison);
+      if (after !== null) previousFields = after;
+    }
+    host.append(row);
+  }
+  if (!actions.length) host.append(node("p", "No browser actions were recorded.", "muted"));
 }
 function eventDescription(event) {
   const p = event.payload || {};
@@ -603,6 +662,9 @@ function eventDescription(event) {
     "browser.capture.failed": "Frame capture interrupted",
     "browser.capture.recovered": "Frame capture recovered",
   };
+  if (event.event_type.startsWith("browser.action.")) {
+    return { title: labels[event.event_type], detail: actionText(p) };
+  }
   return {
     title: labels[event.event_type] || event.event_type.replaceAll(".", " "),
     detail:
@@ -635,6 +697,10 @@ function appendEvent(host, event) {
   );
   const copy = node("div");
   copy.append(node("p", d.title), node("p", d.detail, "muted"));
+  if (event.event_type.startsWith("browser.action.")) {
+    if (event.payload.reason) copy.append(node("p", event.payload.reason, "action-reason muted"));
+    if (event.payload.error) copy.append(node("p", event.payload.error, "action-error"));
+  }
   row.append(copy);
   host.append(row);
   return d;
@@ -648,8 +714,18 @@ if (page === "live") {
     latestRequest = null,
     brief = null,
     evidenceFailed = false,
+    currentBriefStep = 0,
     started = Date.now();
   const seen = new Set();
+  function advanceBriefStep(step) {
+    if (!Number.isInteger(step) || step <= currentBriefStep || !brief?.steps[step - 1]) return;
+    currentBriefStep = step;
+    for (const [index, item] of [...$("plan").children].entries()) {
+      item.dataset.status = index + 1 < step ? "completed" : index + 1 === step ? "in_progress" : "pending";
+      if (index + 1 === step) item.setAttribute("aria-current", "step");
+      else item.removeAttribute("aria-current");
+    }
+  }
   function setStatus(status) {
     $("run-status").textContent = labels[status] || status;
     $("run-dot").className = "dot " + status;
@@ -718,6 +794,14 @@ if (page === "live") {
     if (event.event_type === "evidence.ready") {
       brief = event.payload.brief;
       renderEvidencePlan(brief);
+      const step = currentBriefStep;
+      currentBriefStep = 0;
+      advanceBriefStep(step);
+    }
+    if (event.event_type.startsWith("browser.action.")) advanceBriefStep(event.payload.brief_step);
+    if (event.event_type === "browser.action.completed" && inputActions.has(event.payload.action) && Array.isArray(event.payload.fields)) {
+      $("form-state-section").hidden = false;
+      $("form-state").replaceChildren(...event.payload.fields.map(line => node("div", line)));
     }
     if (event.event_type === "evidence.failed") evidenceFailed = true;
     if (event.event_type === "reproduction.verdict") renderVerdict(event.payload, brief);
@@ -865,6 +949,7 @@ if (page === "live") {
       started = Date.parse(response.run.created_at);
       setStatus(response.run.status);
       refreshFrame();
+      for (const event of await api(`/api/runs/${runId}/events`)) receive(event);
       if (!stopped) {
         source = new EventSource(response.stream_url);
         const types = [
@@ -1014,32 +1099,15 @@ if (page === "report") {
         $("evidence").replaceChildren(
           node("p", "No browser frame was saved for this run.", "empty"),
         );
-      if (terminal.has(record.status)) {
-        const response = await fetch(result.stream_url);
-        if (!response.ok)
-          throw new Error("Saved activity could not be loaded.");
-        const text = await response.text();
-        for (const chunk of text.split("\n\n")) {
-          const line = chunk
-            .split("\n")
-            .find((line) => line.startsWith("data: "));
-          if (line) {
-            const event = JSON.parse(line.slice(6));
-            if (!seen.has(event.sequence)) {
-              seen.add(event.sequence);
-              events.push(event);
-              appendEvent($("report-events"), event);
-            }
-          }
+      for (const event of await api(`/api/runs/${runId}/events`)) {
+        if (!seen.has(event.sequence)) {
+          seen.add(event.sequence);
+          events.push(event);
+          if (!event.event_type.startsWith("browser.action.")) appendEvent($("report-events"), event);
         }
-      } else
-        $("report-events").append(
-          node("p", "Activity is available in the live viewer.", "muted"),
-        );
-      if (!events.length && terminal.has(record.status))
-        $("report-events").append(
-          node("p", "No actions were recorded.", "empty"),
-        );
+      }
+      renderActionLog($("action-log"), events);
+      $("run-events-section").hidden = !$("report-events").childElementCount;
       jsonDownload();
     } catch (error) {
       $("report-message").textContent = error.message;
