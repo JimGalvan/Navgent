@@ -20,6 +20,8 @@ class EventUtils:
             for todo in values["todos"]:
                 todos.append(Todo(**todo))
             values["todos"] = tuple(todos)
+        if "fields" in values:
+            values["fields"] = tuple(values["fields"])
         for event_class in get_args(AgentEvent):
             for event_field in fields(event_class):
                 if event_field.name == "event_type" and event_field.default == event_type:

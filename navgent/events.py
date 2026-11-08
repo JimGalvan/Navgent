@@ -62,6 +62,9 @@ class BrowserNavigationCompletedEvent:
 class BrowserActionStartedEvent:
     action: BrowserAction
     target: str
+    value: str = ""
+    reason: str = ""
+    brief_step: int | None = None
     event_type: Literal["browser.action.started"] = field(default="browser.action.started", init=False)
 
 
@@ -69,6 +72,10 @@ class BrowserActionStartedEvent:
 class BrowserActionCompletedEvent:
     action: BrowserAction
     target: str
+    value: str = ""
+    reason: str = ""
+    brief_step: int | None = None
+    fields: tuple[str, ...] = ()
     event_type: Literal["browser.action.completed"] = field(default="browser.action.completed", init=False)
 
 
@@ -77,6 +84,9 @@ class BrowserActionFailedEvent:
     action: BrowserAction
     target: str
     error: str
+    value: str = ""
+    reason: str = ""
+    brief_step: int | None = None
     event_type: Literal["browser.action.failed"] = field(default="browser.action.failed", init=False)
 
 
