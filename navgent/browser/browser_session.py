@@ -6,7 +6,7 @@ from functools import cache
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from playwright.async_api import BrowserContext, ElementHandle, Page, Request
+from playwright.async_api import BrowserContext, ElementHandle, Page, Request, Route
 from playwright.async_api import Frame as PlaywrightFrame
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
@@ -19,6 +19,7 @@ from navgent.browser.browser_utils import (
     normalize_key,
 )
 from navgent.browser.constants import (
+    ASSET_RESOURCE_TYPES,
     FRAME_QUALITY,
     LOAD_TIMEOUT_MS,
     OBSERVE_ATTEMPTS,
@@ -68,13 +69,17 @@ class BrowserSession:
             allowed_hosts: tuple[str, ...] = (),
             on_request_blocked: Callable[[BlockedRequest], None] | None = None,
             redactor: SecretRedactor | None = None,
+            asset_hosts: tuple[str, ...] = (),
     ):
         self._browser_manager = browser_manager
         self.redactor = redactor or SecretRedactor()
         self._sensitive_controls: list[tuple[PlaywrightFrame, ElementHandle]] = []
         self._trace_path = trace_path
         self._recording_dir = recording_dir
-        self._request_blocks = RequestBlockTracker(allowed_hosts) if allowed_hosts else None
+        self._request_blocks = RequestBlockTracker(allowed_hosts + asset_hosts) if allowed_hosts else None
+        self._asset_hosts: frozenset[str] = frozenset()
+        if allowed_hosts:
+            self._asset_hosts = frozenset(host.lower() for host in asset_hosts)
         self._on_request_blocked = on_request_blocked
         self.current_brief_step: int | None = None
         self._recorders: list[PageRecorder] = []
@@ -120,6 +125,8 @@ class BrowserSession:
                 self._context.on("page", self._start_recording)
             if self._request_blocks is not None and self._on_request_blocked is not None:
                 self._context.on("requestfailed", self._report_failed_request)
+            if self._asset_hosts:
+                await self._context.route(self._is_asset_url, self._route_asset_request)
             if self._trace_path is not None:
                 await self._context.tracing.start(screenshots=False, snapshots=True)
         return self._context
@@ -128,6 +135,22 @@ class BrowserSession:
         blocked = self._request_blocks.check(request.url, request.failure, self.current_brief_step)
         if blocked is not None:
             self._on_request_blocked(blocked)
+
+    def _is_asset_url(self, url: str) -> bool:
+        return (urlsplit(url).hostname or "").lower() in self._asset_hosts
+
+    async def _route_asset_request(self, route: Route) -> None:
+        """Let a CDN serve files to the page, but never a document, a fetch, an upload or a typed credential."""
+        request = route.request
+        allowed = (
+            request.method == "GET"
+            and request.resource_type in ASSET_RESOURCE_TYPES
+            and self.redactor.redact(request.url) == request.url
+        )
+        if allowed:
+            await route.continue_()
+        else:
+            await route.abort("blockedbyclient")
 
     def _start_recording(self, page: Page) -> None:
         recorder = PageRecorder(page, self._recording_dir, VIEWPORT_WIDTH, VIEWPORT_HEIGHT)

@@ -72,6 +72,7 @@ class BrowserAgentSession:
             channel=settings.browser_channel,
             ws_endpoint=settings.browser_ws_endpoint,
             allowed_hosts=settings.allowed_hosts,
+            asset_hosts=settings.asset_hosts,
         )
         self._browser = BrowserSession(
             self._browser_manager,
@@ -80,6 +81,7 @@ class BrowserAgentSession:
             allowed_hosts=settings.allowed_hosts,
             on_request_blocked=self._report_blocked_request,
             redactor=self._redactor,
+            asset_hosts=settings.asset_hosts,
         )
         self._sensitive_inputs = SensitiveInputChannel()
         if credential_provider:

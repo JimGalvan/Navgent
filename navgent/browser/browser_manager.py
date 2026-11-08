@@ -19,11 +19,13 @@ class BrowserManager:
             channel: str | None = None,
             ws_endpoint: str | None = None,
             allowed_hosts: tuple[str, ...] = (),
+            asset_hosts: tuple[str, ...] = (),
     ):
         self._headless = headless
         self._channel = channel
         self._ws_endpoint = ws_endpoint
         self._allowed_hosts = allowed_hosts
+        self._asset_hosts = asset_hosts
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
 
@@ -40,14 +42,14 @@ class BrowserManager:
         return await self._playwright.chromium.launch(
             headless=self._headless,
             channel=self._channel,
-            args=build_launch_args(self._allowed_hosts),
+            args=build_launch_args(self._allowed_hosts, self._asset_hosts),
         )
 
     async def _connect(self) -> Browser:
         # The server only honors client args when started with --unsafe; the sandbox's network rules are the real limit.
         launch_options = {
             "headless": True,
-            "args": build_launch_args(self._allowed_hosts) + REMOTE_BROWSER_LAUNCH_ARGS,
+            "args": build_launch_args(self._allowed_hosts, self._asset_hosts) + REMOTE_BROWSER_LAUNCH_ARGS,
         }
         return await self._playwright.chromium.connect(
             self._ws_endpoint,
@@ -64,10 +66,10 @@ class BrowserManager:
             self._playwright = None
 
 
-def build_launch_args(allowed_hosts: tuple[str, ...]) -> list[str]:
+def build_launch_args(allowed_hosts: tuple[str, ...], asset_hosts: tuple[str, ...] = ()) -> list[str]:
     args = list(BROWSER_LAUNCH_ARGS)
     if allowed_hosts:
-        args.append(build_host_resolver_rules(allowed_hosts))
+        args.append(build_host_resolver_rules(allowed_hosts + asset_hosts))
     return args
 
 
