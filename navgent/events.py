@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Literal, TypeAlias
 from uuid import UUID
 
-from navgent.models import BrowserAction, SessionStatus, Todo
+from navgent.models import BrowserAction, SessionStatus, Todo, Verdict
 
 
 @dataclass(frozen=True)
@@ -155,6 +155,16 @@ class BrowserControlAppliedEvent:
     event_type: Literal["browser.control.applied"] = field(default="browser.control.applied", init=False)
 
 
+@dataclass(frozen=True)
+class ReproductionVerdictEvent:
+    verdict: Verdict
+    expected: str
+    observed: str
+    step_number: int | None
+    reason: str
+    event_type: Literal["reproduction.verdict"] = field(default="reproduction.verdict", init=False)
+
+
 _InputEvent: TypeAlias = (
     InputRequiredEvent
     | InputReceivedEvent
@@ -184,5 +194,5 @@ _SessionEvent: TypeAlias = (
     | BrowserControlAppliedEvent
 )
 AgentEvent: TypeAlias = (
-    AgentMessageDeltaEvent | _InputEvent | _BrowserEvent | TaskTodosEvent | _SessionEvent
+    AgentMessageDeltaEvent | _InputEvent | _BrowserEvent | TaskTodosEvent | _SessionEvent | ReproductionVerdictEvent
 )

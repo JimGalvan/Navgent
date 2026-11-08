@@ -11,6 +11,7 @@ from navgent.events import (
     BrowserControlAppliedEvent,
     BrowserFrameChangedEvent,
     InputRequiredEvent,
+    ReproductionVerdictEvent,
     RunCancelledEvent,
     RunCompletedEvent,
     RunFailedEvent,
@@ -36,6 +37,7 @@ from navgent.models import (
     ScrollAction,
     TextAction,
     Todo,
+    Verdict,
 )
 from navgent.session import BrowserAgentSession
 from navgent.settings import AgentSettings
@@ -61,6 +63,7 @@ __all__ = [
     "KeyAction",
     "MouseDownAction",
     "MouseUpAction",
+    "ReproductionVerdictEvent",
     "RunCancelledEvent",
     "RunCompletedEvent",
     "RunFailedEvent",
@@ -74,4 +77,5 @@ __all__ = [
     "TaskTodosEvent",
     "TextAction",
     "Todo",
+    "Verdict",
 ]
