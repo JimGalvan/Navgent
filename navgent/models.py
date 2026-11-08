@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-from enum import StrEnum
 from typing import Literal, TypeAlias
 from uuid import UUID
 
@@ -10,15 +9,6 @@ ControlKey: TypeAlias = Literal[
     "Enter", "Tab", "Backspace", "Delete", "Escape", "ArrowUp", "ArrowDown",
     "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown", "Control+A", "Meta+A",
 ]
-
-
-class VerificationMethod(StrEnum):
-    SMS = "sms"
-    EMAIL = "email"
-    AUTHENTICATOR_APP = "authenticator_app"
-    PHONE_CALL = "phone_call"
-    PUSH = "push"
-    ASK = "ask"
 
 
 @dataclass(frozen=True)

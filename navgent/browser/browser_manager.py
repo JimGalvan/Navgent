@@ -29,9 +29,3 @@ class BrowserManager:
         if self._playwright is not None:
             await self._playwright.stop()
             self._playwright = None
-
-    async def __aenter__(self) -> Browser:
-        return await self.start()
-
-    async def __aexit__(self, *exc) -> None:
-        await self.stop()
