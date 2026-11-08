@@ -1,0 +1,117 @@
+{
+  "source": "video/footage/check-1/check-1.mp4",
+  "voice_dir": "video/voice/rest",
+  "overlay_dir": "video/shared/overlays",
+  "blur": [
+    [
+      1636,
+      14,
+      168,
+      40
+    ]
+  ],
+  "zooms": {
+    "verdict": [
+      340,
+      60,
+      1280,
+      720
+    ],
+    "proof": [
+      300,
+      240,
+      1120,
+      630
+    ],
+    "checks": [
+      300,
+      160,
+      1280,
+      720
+    ],
+    "sandbox": [
+      300,
+      260,
+      1120,
+      630
+    ],
+    "stream": [
+      300,
+      240,
+      1280,
+      720
+    ]
+  },
+  "segments": [
+    {
+      "note": "3A Check 1 verdict, live",
+      "from": 147.4,
+      "to": 150.9,
+      "hold": 2.6,
+      "zoom": "verdict",
+      "voice": [
+        [
+          "q1",
+          2.2
+        ]
+      ]
+    },
+    {
+      "note": "3B finding frame",
+      "from": 161.5,
+      "to": 165.5,
+      "zoom": "proof"
+    },
+    {
+      "note": "3C checks",
+      "from": 169.0,
+      "to": 172.5,
+      "hold": 2.6,
+      "zoom": "checks",
+      "voice": [
+        [
+          "q2",
+          0.2
+        ]
+      ]
+    },
+    {
+      "note": "3D sandbox destroyed",
+      "from": 173.8,
+      "to": 176.8,
+      "zoom": "sandbox",
+      "voice": [
+        [
+          "q3",
+          0.3
+        ]
+      ]
+    },
+    {
+      "note": "K0 python.org run, sandbox glance",
+      "source": "video/footage/containment/containment.mp4",
+      "from": 4.0,
+      "to": 12.4,
+      "label": "real",
+      "voice": [
+        [
+          "c1",
+          0.3
+        ]
+      ]
+    },
+    {
+      "note": "K1 blocked hosts",
+      "source": "video/footage/containment/blocked.mp4",
+      "from": 3.8,
+      "to": 9.8,
+      "zoom": "stream",
+      "voice": [
+        [
+          "c2",
+          0.4
+        ]
+      ]
+    }
+  ]
+}

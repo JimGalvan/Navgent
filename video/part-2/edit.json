@@ -1,0 +1,29 @@
+{
+  "source": "video/footage/check-1/check-1.mp4",
+  "voice_dir": "video/voice/part-2",
+  "overlay_dir": "video/shared/overlays",
+  "blur": [[1636, 14, 168, 40]],
+  "zooms": {
+    "credential": [800, 230, 960, 540],
+    "plan": [880, 180, 960, 540],
+    "sandbox": [300, 220, 960, 540],
+    "browser": [238, 230, 1066, 600],
+    "form": [900, 120, 960, 540]
+  },
+  "segments": [
+    {"note": "2A Check 1 card", "from": 78.0, "to": 78.1, "hold": 3.0, "overlay": "check1", "blur": [[400, 915, 1120, 165]]},
+    {"note": "2B paste", "from": 80.5, "to": 88.2, "blur": [[400, 915, 1120, 165]], "voice": [["p1", 0.3]]},
+    {"note": "2B credential appears", "from": 88.2, "to": 93.8, "zoom": "credential", "voice": [["p2", 0.2]]},
+    {"note": "2B click Start", "from": 99.9, "to": 101.4},
+    {"note": "2C plan fills in", "from": 101.4, "to": 103.6, "hold": 4.2, "zoom": "plan", "voice": [["p3", 0.3]]},
+    {"note": "2D scroll to sandbox", "from": 103.6, "to": 104.6, "voice": [["p4", 0.2]]},
+    {"note": "2D sandbox limits", "from": 104.6, "to": 107.6, "zoom": "sandbox"},
+    {"note": "2E sign-in, dots", "from": 107.6, "to": 110.4, "zoom": "browser", "label": "real"},
+    {"note": "2E where the login lives", "from": 110.3, "to": 110.4, "hold": 12.0, "zoom": "browser", "overlay": "credential", "voice": [["p7", 0.4]]},
+    {"note": "2F search and edit", "from": 110.4, "to": 134.2, "speed": 3, "label": "speed3", "voice": [["p5", 1.0]]},
+    {"note": "2F scroll to form state", "from": 134.2, "to": 135.0, "label": "real"},
+    {"note": "2F times set", "from": 135.0, "to": 138.3, "zoom": "form", "label": "real", "voice": [["p6", 0.0]]},
+    {"note": "2F save", "from": 138.3, "to": 141.0, "speed": 3, "label": "speed3"},
+    {"note": "2F calendar arrives", "from": 141.0, "to": 144.8, "zoom": "browser", "label": "real"}
+  ]
+}

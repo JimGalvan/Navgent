@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Overlays</title>
+<style>
+  :root { --ink: #14171c; --muted: #5b6472; --paper: #ffffff; --mark: #ff6b2c; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: transparent; }
+  body { font-family: "Segoe UI", "Inter", system-ui, sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
+  .layer { position: absolute; inset: 0; display: none; }
+  .dim { position: absolute; inset: 0; background: rgba(14,16,20,.62); }
+  .check { position: absolute; left: 50%; top: 50%; width: 1060px; transform: translate(-50%, -50%);
+           display: grid; grid-template-columns: 150px 1fr auto; align-items: center; gap: 26px; background: var(--paper);
+           border-radius: 16px; padding: 30px 38px; box-shadow: 0 24px 60px rgba(0,0,0,.28); }
+  .check .num { font-size: 17px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; color: #c2410c; }
+  .check .q { font-size: 40px; font-weight: 650; letter-spacing: -0.01em; }
+  .check .cost { font-size: 19px; color: var(--muted); white-space: nowrap; }
+  .speed { position: absolute; right: 36px; top: 32px; font: 650 22px "Segoe UI", system-ui, sans-serif; color: #fff;
+           background: rgba(14,16,20,.78); padding: 8px 16px; border-radius: 10px; letter-spacing: .02em; }
+  .speed b { color: var(--mark); font-weight: 750; margin-right: 6px; }
+  .flow { position: absolute; left: 50%; top: 50%; width: 1660px; transform: translate(-50%, -50%); background: var(--paper);
+          border-radius: 20px; padding: 44px 52px 48px; box-shadow: 0 30px 70px rgba(0,0,0,.32); }
+  .flow-title { font-size: 34px; font-weight: 650; letter-spacing: -0.01em; margin-bottom: 34px; }
+  .flow-row { display: grid; grid-template-columns: 1fr 170px 1fr 170px 1fr; align-items: start; }
+  .node-kind { font-size: 16px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; }
+  .node.home .node-kind { color: #c2410c; }
+  .mock { height: 190px; border: 1.5px solid #e4e7ec; border-radius: 14px; padding: 20px 22px; background: #f8f9fb;
+          display: flex; flex-direction: column; gap: 12px; }
+  .node.home .mock { border-color: var(--mark); background: #fff7f2; }
+  .mock-label { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 650; color: var(--muted); }
+  .lock { width: 22px; height: 22px; fill: none; stroke: #c2410c; stroke-width: 2; }
+  .chip-name { align-self: flex-start; font-size: 20px; font-weight: 600; padding: 6px 14px; border-radius: 9px; background: var(--paper); border: 1px solid #e4e7ec; }
+  .mock-none { font-size: 19px; color: var(--muted); }
+  .cipher { font: 500 19px "Cascadia Mono", Consolas, monospace; color: #6b7280; }
+  .url { font: 500 15px "Cascadia Mono", Consolas, monospace; color: var(--muted); background: var(--paper); border: 1px solid #e4e7ec;
+         border-radius: 8px; padding: 6px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .field { display: flex; align-items: center; gap: 12px; font-size: 18px; letter-spacing: .12em; color: var(--ink);
+           background: var(--paper); border: 1px solid #e4e7ec; border-radius: 8px; padding: 8px 12px; }
+  .field small { font-size: 14px; letter-spacing: 0; color: var(--muted); width: 74px; }
+  .caption { margin-top: 16px; font-size: 21px; line-height: 1.4; color: #2b3038; }
+  .arrow { position: relative; height: 190px; margin-top: 31px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+  .arrow span { font-size: 16px; line-height: 1.3; text-align: center; color: var(--muted); font-weight: 600; }
+  .arrow svg { width: 150px; height: 24px; fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+  .arrow.dashed svg { stroke: #9aa1ad; stroke-dasharray: 8 8; }
+  .arrow.dashed svg path { stroke-dasharray: none; }
+  .arrow.solid svg { stroke: var(--mark); }
+  .arrow.solid span { color: #c2410c; }
+</style>
+</head>
+<body>
+  <div class="layer" id="check1">
+    <div class="dim"></div>
+    <div class="check"><div class="num">Check 1</div><div class="q">Is it still happening?</div><div class="cost">Reprobe</div></div>
+  </div>
+  <div class="layer" id="check2">
+    <div class="dim"></div>
+    <div class="check"><div class="num">Check 2</div><div class="q">Did the fix work?</div><div class="cost">Reprobe</div></div>
+  </div>
+  <div class="layer" id="speed3"><div class="speed"><b>3×</b>sped up</div></div>
+  <div class="layer" id="real"><div class="speed">real speed</div></div>
+  <div class="layer" id="credential">
+    <div class="dim"></div>
+    <div class="flow">
+      <div class="flow-title">Where the saved login lives</div>
+      <div class="flow-row">
+        <div class="node">
+          <div class="node-kind">AI agent</div>
+          <div class="mock">
+            <div class="mock-label">What it gets</div>
+            <div class="chip-name"><span data-name></span></div>
+            <div class="mock-none">Value: never sent</div>
+          </div>
+          <p class="caption">Picks the login by name.<br>Never gets the value.</p>
+        </div>
+        <div class="arrow dashed"><span>asks for it<br>by name</span><svg viewBox="0 0 170 24"><line x1="4" y1="12" x2="150" y2="12"/><path d="M148 4 L164 12 L148 20"/></svg></div>
+        <div class="node home">
+          <div class="node-kind">Reprobe server</div>
+          <div class="mock">
+            <div class="mock-label">
+              <svg class="lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10 V7.5 a4 4 0 0 1 8 0 V10"/></svg>
+              Encrypted
+            </div>
+            <div class="chip-name"><span data-name></span></div>
+            <div class="cipher">v1:9f3a0c…e71b42</div>
+          </div>
+          <p class="caption">Stored encrypted, key kept apart.<br>Decrypted only to type it.</p>
+        </div>
+        <div class="arrow solid"><span>types it in,<br>this site only</span><svg viewBox="0 0 170 24"><line x1="4" y1="12" x2="150" y2="12"/><path d="M148 4 L164 12 L148 20"/></svg></div>
+        <div class="node">
+          <div class="node-kind">Sandbox browser</div>
+          <div class="mock">
+            <div class="url">roompilot-production.up.railway.app</div>
+            <div class="field"><small>Email</small>●●●●●●●●●●●●</div>
+            <div class="field"><small>Password</small>●●●●●●●●●●</div>
+          </div>
+          <p class="caption">Masked as it's typed. Nothing saved,<br>browser destroyed after the run.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+<script>
+  const params = new URLSearchParams(location.search);
+  const show = params.get("show") || "check1";
+  document.getElementById(show).style.display = "block";
+  for (const el of document.querySelectorAll("[data-name]")) {
+    el.textContent = params.get("name") || "RoomPilot test login";
+  }
+  window.seek = function () {};
+  window.DURATION = 0;
+  window.AUDIO_CUES = [];
+</script>
+</body>
+</html>

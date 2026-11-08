@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Part 6 scene</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0b0b0b; }
+  body { font-family: "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  .scene { position: absolute; inset: 0; opacity: 0; }
+  #comment { background: #f6f7f9; }
+  .thread { position: absolute; left: 50%; top: 50%; width: 1100px; transform: translate(-50%, -50%);
+            background: #fff; border: 1px solid #e4e7ec; border-radius: 18px; padding: 40px 48px 34px; }
+  .crumb { font-size: 18px; color: #5b6472; margin-bottom: 26px; }
+  .crumb b { color: #14171c; }
+  .c { padding: 18px 0 22px; border-top: 1px solid #e4e7ec; font-size: 26px; line-height: 1.45; color: #2b3038; }
+  .c:first-of-type { border-top: 0; padding-top: 0; }
+  .who { font-weight: 650; color: #14171c; font-size: 22px; margin-bottom: 4px; }
+  .who span { color: #8a93a1; font-weight: 400; }
+  .c.last { position: relative; }
+  .ring { position: absolute; inset: 4px -18px 6px -18px; border: 3px solid #ff6b2c; border-radius: 12px;
+          box-shadow: 0 0 0 4px rgba(255,107,44,.18); opacity: 0; }
+  #end { display: grid; place-items: center; text-align: center; }
+  .name { font-size: 96px; font-weight: 650; color: #f4f4f4; letter-spacing: -0.02em; }
+  .rule { width: 72px; height: 4px; background: #c6f24e; margin: 26px auto; border-radius: 2px; }
+  .line { font-size: 34px; color: #a3a8ae; }
+</style>
+</head>
+<body>
+<section class="scene" id="comment">
+  <div class="thread">
+    <div class="crumb"><b>Northstar</b> / RoomPilot / Issues / RP-214 · Comments</div>
+    <div class="c"><div class="who">Morgan Chen <span>· QA Lead</span></div>Does the old slot clear if you refresh the calendar?</div>
+    <div class="c"><div class="who">Priya Nair <span>· QA</span></div>No. Refreshed during the recording and both times are still listed.</div>
+    <div class="c last"><div class="who">Morgan Chen <span>· QA Lead</span></div>Thanks. Keep this in the reservation regression checks.<div class="ring" id="ring"></div></div>
+  </div>
+</section>
+<section class="scene" id="end">
+  <div>
+    <div class="name">Reprobe</div>
+    <div class="rule"></div>
+    <div class="line">Reproduce the bug. Verify the fix.</div>
+  </div>
+</section>
+<script>
+  const AUDIO_CUES = [{ id: "s2", at: 1.4 }];
+  const DURATION = 11.0;
+  const END_AT = 5.6;
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  function seek(t) {
+    document.getElementById("comment").style.opacity = t < END_AT ? clamp(t / 0.5, 0, 1) : 0;
+    document.getElementById("ring").style.opacity = clamp((t - 1.2) / 0.25, 0, 1);
+    document.getElementById("end").style.opacity = t >= END_AT ? clamp((t - END_AT) / 0.8, 0, 1) : 0;
+  }
+  window.seek = seek; window.AUDIO_CUES = AUDIO_CUES; window.DURATION = DURATION;
+  seek(0);
+</script>
+</body>
+</html>

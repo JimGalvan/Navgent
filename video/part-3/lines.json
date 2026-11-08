@@ -1,0 +1,14 @@
+[
+  {"id": "q1", "text": "So it's real. And now I have a run I can repeat."},
+  {"id": "q2", "text": "What it reports as observed has to actually be on the page, so it can't just describe the bug back to me."},
+  {"id": "q3", "text": "And the browser it used is already gone."},
+  {"id": "c1", "text": "That sandbox is the same for every run. Point it at a site that loads scripts from all over the place, and you can watch it refuse them."},
+  {"id": "c2", "text": "The page still loads. Anything it isn't allowed to reach gets stopped, and logged."},
+  {"id": "f1", "text": "Okay. Now the part I actually care about: fixing it, and knowing it's fixed."},
+  {"id": "f2", "text": "Rescheduling added a new calendar entry and never moved the old one. Now it moves the one that's already there."},
+  {"id": "f3", "text": "Deployed, and the demo data's back to where it started."},
+  {"id": "r1", "text": "Same bug report, same steps. I'm not changing anything on this side."},
+  {"id": "r2", "text": "Ten o'clock's free."},
+  {"id": "s1", "text": "That's one path, the way QA hit it. It doesn't mean rescheduling is bug-free. But this one's fixed, and the check's still here, one click away, next time someone touches the calendar."},
+  {"id": "s2", "text": "Which is pretty much what QA asked for in the first place."}
+]

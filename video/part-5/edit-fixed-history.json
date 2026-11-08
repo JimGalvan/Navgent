@@ -1,0 +1,105 @@
+{
+  "source": "video/footage/check-2/check-2.mp4",
+  "voice_dir": "video/voice/rest",
+  "overlay_dir": "video/shared/overlays",
+  "blur": [
+    [
+      1636,
+      14,
+      168,
+      40
+    ]
+  ],
+  "zooms": {
+    "browser": [
+      238,
+      230,
+      1066,
+      600
+    ],
+    "verdict": [
+      340,
+      60,
+      1280,
+      720
+    ],
+    "proof": [
+      300,
+      240,
+      1120,
+      630
+    ],
+    "history": [
+      340,
+      400,
+      1200,
+      675
+    ]
+  },
+  "segments": [
+    {
+      "note": "5A Check 2 card over the Check 1 report",
+      "from": 10.0,
+      "to": 10.1,
+      "hold": 3.0,
+      "overlay": "check2"
+    },
+    {
+      "note": "5B Run again",
+      "from": 10.1,
+      "to": 13.8
+    },
+    {
+      "note": "5C retest, sped up",
+      "from": 13.8,
+      "to": 47.0,
+      "speed": 3,
+      "label": "speed3",
+      "voice": [
+        [
+          "r1",
+          0.3
+        ]
+      ]
+    },
+    {
+      "note": "5D calendar, one block",
+      "from": 47.0,
+      "to": 52.0,
+      "zoom": "browser",
+      "label": "real"
+    },
+    {
+      "note": "5E Not reproduced",
+      "from": 52.4,
+      "to": 55.5,
+      "hold": 2.4,
+      "zoom": "verdict",
+      "voice": [
+        [
+          "r2",
+          2.4
+        ]
+      ]
+    },
+    {
+      "note": "5F final frame",
+      "from": 127.5,
+      "to": 130.3,
+      "zoom": "proof"
+    },
+    {
+      "note": "5G run history",
+      "from": 137.0,
+      "to": 140.0,
+      "hold": 9.5,
+      "zoom": "history",
+      "voice": [
+        [
+          "s1",
+          0.8
+        ]
+      ]
+    }
+  ]
+}
