@@ -18,6 +18,8 @@ class RunModel(Base):
     bug_report: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     repro_brief: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     evidence_frames: Mapped[list[dict[str, str]]] = mapped_column(JSON)
+    reported_verdict: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    recordings: Mapped[list[str]] = mapped_column(JSON)
     status: Mapped[str]
     max_runtime_seconds: Mapped[int]
     final_output: Mapped[str | None]

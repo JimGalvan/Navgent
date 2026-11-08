@@ -1,13 +1,13 @@
 import logging
 from dataclasses import replace
+from pathlib import Path
 from uuid import UUID
-
-from navgent import BrowserAgentSession
 
 from app.config import read_agent_settings
 from app.credentials.agent_provider import CredentialServiceProvider
 from app.credentials.service import CredentialService
 from app.runs import constants
+from navgent import BrowserAgentSession
 
 logging.getLogger("dotenv.main").setLevel(logging.ERROR)
 
@@ -15,6 +15,7 @@ logging.getLogger("dotenv.main").setLevel(logging.ERROR)
 def build_agent_runtime(
         thread_id: UUID,
         user_id: UUID | None,
+        recording_dir: Path,
         credential_ids: tuple[UUID, ...] = (),
         credential_service: CredentialService | None = None,
         headless: bool | None = None,
@@ -23,6 +24,7 @@ def build_agent_runtime(
 ) -> BrowserAgentSession:
     settings = replace(
         read_agent_settings(thread_id),
+        recording_dir=recording_dir,
         max_runtime_seconds=max_runtime_seconds,
         sensitive_input_window_seconds=sensitive_input_window_seconds,
     )

@@ -6,7 +6,14 @@ from typing import Any, Literal
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    SecretStr,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
 from app.clock import utc_now
 from navgent import (
@@ -14,6 +21,7 @@ from navgent import (
     MAX_CONTROL_SCROLL_PIXELS,
     VIEWPORT_HEIGHT,
     VIEWPORT_WIDTH,
+    Verdict,
 )
 
 
@@ -63,6 +71,20 @@ class EvidenceFrame(BaseModel):
     label: str
 
 
+class RunVerdict(BaseModel):
+    verdict: Verdict
+    expected: str
+    observed: str
+    step_number: int | None
+    reason: str
+
+    @model_validator(mode="after")
+    def ignore_step_on_passing_check(self):
+        if self.verdict == "not_reproduced":
+            self.step_number = None
+        return self
+
+
 class RunRecord(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     thread_id: UUID = Field(default_factory=uuid4)
@@ -72,6 +94,8 @@ class RunRecord(BaseModel):
     bug_report: StoredBugReport | None = None
     repro_brief: dict[str, Any] | None = None
     evidence_frames: list[EvidenceFrame] = Field(default_factory=list)
+    reported_verdict: RunVerdict | None = Field(default=None, exclude=True)
+    recordings: list[str] = Field(default_factory=list)
     status: RunStatus = RunStatus.QUEUED
     max_runtime_seconds: int
     final_output: str | None = None
@@ -79,6 +103,18 @@ class RunRecord(BaseModel):
     follow_up_expires_at: datetime | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+    @computed_field
+    @property
+    def verdict(self) -> RunVerdict | None:
+        if self.status.is_terminal and self.status != RunStatus.SUCCEEDED:
+            return None
+        if self.status == RunStatus.SUCCEEDED and self.reported_verdict is None:
+            return RunVerdict(
+                verdict="inconclusive", expected="", observed="", step_number=None,
+                reason="The agent finished without a verdict.",
+            )
+        return self.reported_verdict
 
 
 class RunEvent(BaseModel):

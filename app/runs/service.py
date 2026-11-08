@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections import OrderedDict
 from collections.abc import AsyncIterator
 from datetime import timedelta
@@ -32,6 +33,7 @@ from app.runs.schemas import (
     RunEvent,
     RunRecord,
     RunStatus,
+    RunVerdict,
     StoredBugReport,
 )
 from navgent import (
@@ -131,7 +133,7 @@ class RunManager:
         try:
             await self._start_session(context, run.task)
         except Exception:
-            await self._finish_context(context)
+            await self._finish_context(context, RunStatus.FAILED)
             raise
         return run
 
@@ -140,6 +142,7 @@ class RunManager:
         context.session = build_agent_runtime(
             run.thread_id,
             user_id=run.user_id,
+            recording_dir=self._evidence.run_directory(run) / "recording",
             credential_ids=tuple(run.credential_ids),
             credential_service=self._credential_service,
             headless=self._headless,
@@ -176,8 +179,7 @@ class RunManager:
         except Exception:
             run.error = "The browser session could not start. Try running again."
             await self._publish(context, "run.failed", {"error": run.error})
-            await self._set_status(context, RunStatus.FAILED)
-            await self._finish_context(context)
+            await self._finish_context(context, RunStatus.FAILED)
 
     async def _fail_evidence(self, context: RunContext, exception: Exception) -> None:
         message = "Couldn't read the evidence. Check your files and steps, then try again."
@@ -186,8 +188,7 @@ class RunManager:
         context.run.error = message
         await self._publish(context, "evidence.failed", {"error": message})
         await self._publish(context, "run.failed", {"error": message})
-        await self._set_status(context, RunStatus.FAILED)
-        await self._finish_context(context)
+        await self._finish_context(context, RunStatus.FAILED)
 
     async def submit_input(self, run_id: UUID, user_id: UUID, answer: str) -> RunRecord:
         context = self._require_waiting_context(run_id, user_id)
@@ -274,7 +275,7 @@ class RunManager:
             context, _ = self._resolve_owned(run_id, user_id)
             if context is None:
                 raise RunNotFoundError(f"Run {run_id} was not found")
-            if context.run.status != RunStatus.READY_FOR_FOLLOW_UP:
+            if context.run.status != RunStatus.READY_FOR_FOLLOW_UP or context.finish_lock.locked():
                 raise RunNotReadyForFollowUpError("The run is not ready for a follow-up")
             expiry_task = context.follow_up_expiry_task
             context.follow_up_expiry_task = None
@@ -301,11 +302,13 @@ class RunManager:
             return run
         if context.run.status.is_terminal:
             return context.run
+        if context.finish_lock.locked():
+            async with context.finish_lock:
+                return context.run
         if context.session is None:
             await self._stop_task(context.preparation_task)
             await self._publish(context, "run.cancelled", {})
-            await self._set_status(context, RunStatus.CANCELLED)
-            await self._finish_context(context)
+            await self._finish_context(context, RunStatus.CANCELLED)
             return context.run
         await context.session.cancel()
         await self._await_cancelled_task(context.event_task)
@@ -336,17 +339,21 @@ class RunManager:
                     status = RunStatus(event.status)
                     if status == RunStatus.TIMED_OUT:
                         context.run.error = None
-                    await self._set_status(context, status)
                     if status == RunStatus.READY_FOR_FOLLOW_UP:
+                        await self._set_status(context, status)
                         context.run.follow_up_expires_at = None
-                        await self._set_status(context, RunStatus.SUCCEEDED)
-                        await self._finish_context(context)
+                        await self._finish_context(context, RunStatus.SUCCEEDED)
                         return
-                    elif status.is_terminal:
-                        await self._finish_context(context)
+                    if status.is_terminal:
+                        await self._finish_context(context, status)
+                        return
+                    await self._set_status(context, status)
                     continue
                 payload = RunEventUtils.payload(event)
-                if event.event_type == "run.completed":
+                if event.event_type == "reproduction.verdict":
+                    context.run.reported_verdict = RunVerdict.model_validate(payload)
+                    context.run.updated_at = utc_now()
+                elif event.event_type == "run.completed":
                     context.run.final_output = event.output
                     context.run.follow_up_expires_at = utc_now() + timedelta(seconds=self._follow_up_window_seconds)
                     payload["follow_up_expires_at"] = context.run.follow_up_expires_at.isoformat()
@@ -365,9 +372,8 @@ class RunManager:
             context.run.follow_up_expires_at = None
             try:
                 await self._publish(context, "run.failed", {"error": str(exception)})
-                await self._set_status(context, RunStatus.FAILED)
             finally:
-                await self._finish_context(context)
+                await self._finish_context(context, RunStatus.FAILED)
 
     async def _forward_frames(self, context: RunContext) -> None:
         assert context.session is not None
@@ -377,13 +383,33 @@ class RunManager:
                 context.frame_sequence += 1
                 context.frame_condition.notify_all()
 
-    async def _finish_context(self, context: RunContext) -> None:
+    async def _finish_context(self, context: RunContext, status: RunStatus) -> None:
+        async with context.finish_lock:
+            if context.run.status.is_terminal:
+                return
+            try:
+                await self._close_browser(context)
+            except Exception:
+                logging.getLogger(__name__).exception("Could not finalize browser evidence for run %s", context.run.id)
+                await self._publish(context, "browser.capture.failed", {"message": "Some final browser evidence could not be saved."})
+            await self._set_status(context, status)
+            async with self._manager_lock:
+                self._active_run_ids.discard(context.run.id)
+                self._contexts.pop(context.run.id, None)
+            async with context.frame_condition:
+                context.frame_condition.notify_all()
+
+    async def _close_browser(self, context: RunContext) -> None:
         expiry_task = context.follow_up_expiry_task
         context.follow_up_expiry_task = None
         await self._stop_task(expiry_task)
         if context.session is not None:
             await context.session.close()
-            await self._await_cancelled_task(context.event_task)
+            directory = (self._evidence.run_directory(context.run) / "recording").resolve()
+            context.run.recordings = [
+                path.name for path in context.session.recording_paths
+                if path.resolve().parent == directory and path.suffix.lower() == ".webm" and path.is_file()
+            ]
             await self._await_cancelled_task(context.frame_task)
             latest_frame = context.session.get_latest_frame()
             if latest_frame is not None:
@@ -396,13 +422,6 @@ class RunManager:
             self._completed_frames.move_to_end(context.run.id)
             while len(self._completed_frames) > constants.MAX_COMPLETED_FRAME_COUNT:
                 self._completed_frames.popitem(last=False)
-        async with self._manager_lock:
-            self._active_run_ids.discard(context.run.id)
-            self._contexts.pop(context.run.id, None)
-        async with context.event_condition:
-            context.event_condition.notify_all()
-        async with context.frame_condition:
-            context.frame_condition.notify_all()
 
     async def _set_status(self, context: RunContext, status: RunStatus) -> None:
         if context.run.status == status:
@@ -412,7 +431,10 @@ class RunManager:
         context.run.status = status
         context.run.updated_at = utc_now()
         self._repository.save_run(context.run)
-        payload = {"status": status.value}
+        payload: dict[str, Any] = {"status": status.value}
+        if status.is_terminal:
+            verdict = context.run.verdict
+            payload["verdict"] = verdict.model_dump() if verdict else None
         if context.run.follow_up_expires_at is not None:
             payload["follow_up_expires_at"] = context.run.follow_up_expires_at.isoformat()
         await self._publish(context, "run.status", payload)
@@ -476,6 +498,15 @@ class RunManager:
             raise RunNotFoundError("This evidence frame was not found")
         return path
 
+    def get_recording(self, run_id: UUID, user_id: UUID, number: int) -> Path:
+        _, run = self._resolve_owned(run_id, user_id)
+        if 1 <= number <= len(run.recordings):
+            directory = (self._evidence.run_directory(run) / "recording").resolve()
+            path = (directory / run.recordings[number - 1]).resolve()
+            if path.parent == directory and path.is_file():
+                return path
+        raise RunNotFoundError("This recording was not found")
+
     def _require_waiting_context(self, run_id: UUID, user_id: UUID) -> RunContext:
         context, _ = self._resolve_owned(run_id, user_id)
         if context is None:
@@ -505,10 +536,9 @@ class RunManager:
 
             context.run.follow_up_expires_at = None
             await self._publish(context, "follow_up.ended", {})
-            await self._set_status(context, RunStatus.SUCCEEDED)
 
         await self._await_cancelled_task(expiry_task)
-        await self._finish_context(context)
+        await self._finish_context(context, RunStatus.SUCCEEDED)
         return context.run
 
     def get_latest_frame(self, run_id: UUID, user_id: UUID) -> bytes | None:
@@ -610,9 +640,8 @@ class RunManager:
             context.follow_up_expiry_task = None
             context.run.follow_up_expires_at = None
             await self._publish(context, "follow_up.expired", {})
-            await self._set_status(context, RunStatus.SUCCEEDED)
 
-        await self._finish_context(context)
+        await self._finish_context(context, RunStatus.SUCCEEDED)
 
     async def _await_cancelled_task(
             self,
@@ -639,7 +668,9 @@ class RunManager:
         context.events.append(event)
 
         if persist:
-            self._repository.save_event(event)
+            self._repository.save_event(
+                event, updated_run=context.run if event_type == "reproduction.verdict" else None,
+            )
 
         async with context.event_condition:
             context.event_condition.notify_all()

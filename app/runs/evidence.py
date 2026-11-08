@@ -105,8 +105,9 @@ class RunEvidenceStore:
     def copy_evidence(self, source: RunRecord, destination: RunRecord) -> None:
         assert source.bug_report is not None
         source_directory = self.run_directory(source)
-        if source_directory.is_dir():
-            shutil.copytree(source_directory, self.run_directory(destination))
+        for name in ("uploads", "evidence"):
+            if (source_directory / name).is_dir():
+                shutil.copytree(source_directory / name, self.run_directory(destination) / name)
         destination.bug_report = source.bug_report.model_copy(deep=True)
         destination.repro_brief = source.repro_brief
         destination.evidence_frames = []

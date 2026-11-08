@@ -18,6 +18,7 @@ from app.main import app
 from app.runs.repository import RunRepository
 from app.runs.service import RunManager
 from app.server import routes
+from navgent import ReproductionVerdictEvent
 from navgent.events import RunCompletedEvent, SessionStatusEvent
 from navgent.evidence import Assertion, ReproBrief, ReproStep
 
@@ -74,7 +75,10 @@ class StubEvidenceModel:
 
 
 class CompletedSession:
-    def __init__(self):
+    def __init__(self, settings, scenario):
+        self.settings = settings
+        self.scenario = scenario
+        self.paths = []
         self.tasks = []
         self.queue = asyncio.Queue()
         self.closed = asyncio.Event()
@@ -82,8 +86,12 @@ class CompletedSession:
     async def start(self, task):
         self.tasks.append(task)
         await self.queue.put(SessionStatusEvent("running"))
+        for event in self.scenario.events:
+            await self.queue.put(event)
+        if self.scenario.status is None:
+            return
         await self.queue.put(RunCompletedEvent("Observed the cart total."))
-        await self.queue.put(SessionStatusEvent("ready_for_follow_up"))
+        await self.queue.put(SessionStatusEvent(self.scenario.status))
 
     async def events(self):
         while True:
@@ -100,8 +108,23 @@ class CompletedSession:
         return image_bytes()
 
     async def close(self):
+        if self.closed.is_set():
+            return
+        self.scenario.closing.set()
+        while not self.scenario.allow_close.is_set():
+            await asyncio.sleep(0.01)
+        for name, content in self.scenario.videos:
+            self.settings.recording_dir.mkdir(exist_ok=True, parents=True)
+            path = self.settings.recording_dir / name
+            path.write_bytes(content)
+            self.paths.append(path)
         self.closed.set()
         await self.queue.put(None)
+
+    @property
+    def recording_paths(self):
+        assert self.closed.is_set(), "Recordings are only ready after close"
+        return self.paths
 
 
 @pytest.fixture
@@ -112,18 +135,21 @@ def client(monkeypatch, tmp_path):
     model = StubEvidenceModel()
     sessions = []
     models = []
+    scenario = SimpleNamespace(events=[], videos=[], status="ready_for_follow_up",
+                               closing=threading.Event(), allow_close=threading.Event())
+    scenario.allow_close.set()
 
     def build_model(name):
         models.append(name)
         return model
 
-    def build_session(*args, **kwargs):
-        session = CompletedSession()
+    def build_session(settings, **kwargs):
+        session = CompletedSession(settings, scenario)
         sessions.append(session)
         return session
 
     monkeypatch.setattr("navgent.evidence.pipeline.build_evidence_model", build_model)
-    monkeypatch.setattr("app.runs.service.build_agent_runtime", build_session)
+    monkeypatch.setattr("app.runs.runtime.BrowserAgentSession", build_session)
     monkeypatch.setattr("app.runs.service.DATABASE_PATH", tmp_path / "runs.db")
     monkeypatch.setattr(routes, "DATABASE_PATH", tmp_path / "runs.db")
     monkeypatch.setattr(routes, "repository", repository)
@@ -135,7 +161,7 @@ def client(monkeypatch, tmp_path):
     with TestClient(app) as connection:
         yield SimpleNamespace(
             http=connection, user=user, manager=manager, repository=repository,
-            model=model, sessions=sessions, models=models, directory=tmp_path,
+            model=model, sessions=sessions, models=models, directory=tmp_path, scenario=scenario,
         )
     app.dependency_overrides.clear()
 
@@ -151,7 +177,7 @@ def finish_run(client, run_id):
         response = client.http.get(f"/api/runs/{run_id}")
         assert response.status_code == 200, response.text
         run = response.json()["run"]
-        if run["status"] in {"succeeded", "failed", "cancelled"} and UUID(run_id) not in routes.run_manager._contexts:
+        if run["status"] in {"succeeded", "failed", "cancelled", "timed_out"}:
             return run
         time.sleep(0.01)
     pytest.fail(f"Run did not finish: {run}")
@@ -175,6 +201,8 @@ def test_written_steps_are_analyzed_before_the_browser_starts(client, monkeypatc
     run_id = create_run(client)
     run = finish_run(client, run_id)
     assert run["status"] == "succeeded"
+    assert run["verdict"]["verdict"] == "inconclusive"
+    assert run["verdict"]["reason"] == "The agent finished without a verdict."
     assert client.model.schema is ReproBrief
     assert client.models == ["openai:test-evidence-model"]
     assert len(client.model.messages) == 1
@@ -432,3 +460,90 @@ def test_existing_run_database_is_upgraded_without_losing_runs(tmp_path):
     assert run.bug_report is None
     assert run.repro_brief is None
     assert run.evidence_frames == []
+    assert run.recordings == []
+    assert run.verdict.reason == "The agent finished without a verdict."
+
+
+def test_latest_verdict_is_available_live_and_after_reload(client):
+    first = ReproductionVerdictEvent("reproduced", "$30", "$42", 2, "The total stayed at $42.")
+    second = ReproductionVerdictEvent("not_reproduced", "$30", "$30", 2, "The total updated.")
+    client.scenario.events = [first]
+    client.scenario.status = None
+    run_id = create_run(client)
+    for _ in range(200):
+        run = client.http.get(f"/api/runs/{run_id}").json()["run"]
+        if run["verdict"]:
+            break
+        time.sleep(0.01)
+    assert run["status"] == "running"
+    assert run["verdict"] == dict(verdict="reproduced", expected="$30", observed="$42",
+                                  step_number=2, reason=first.reason)
+    assert client.repository.get_run(UUID(run_id)).verdict.reason == first.reason
+    queue = client.sessions[0].queue
+    client.http.portal.call(queue.put, second)
+    client.http.portal.call(queue.put, SessionStatusEvent("ready_for_follow_up"))
+    saved = finish_run(client, run_id)
+    assert saved["verdict"] == dict(verdict="not_reproduced", expected="$30", observed="$30",
+                                    step_number=None, reason=second.reason)
+    assert client.repository.get_run(UUID(run_id)).verdict.model_dump() == saved["verdict"]
+    events = [e for e in client.repository.list_events(UUID(run_id)) if e.event_type == "reproduction.verdict"]
+    assert [e.payload["reason"] for e in events] == [first.reason, second.reason]
+    assert events[1].payload["step_number"] == 2
+
+
+@pytest.mark.parametrize("status", ["ready_for_follow_up", "cancelled", "failed", "timed_out"])
+def test_finalized_tab_recordings_belong_to_the_run_owner(client, status):
+    client.scenario.status = status
+    client.scenario.events = [ReproductionVerdictEvent("reproduced", "$30", "$42", 2, "The total stayed at $42.")]
+    client.scenario.videos = [("z.webm", b"tab one"), ("a.webm", b"tab two")]
+    run_id = create_run(client)
+    run = finish_run(client, run_id)
+    assert run["status"] == ("succeeded" if status == "ready_for_follow_up" else status)
+    if status != "ready_for_follow_up":
+        assert run["verdict"] is None
+    assert client.sessions[0].settings.recording_dir == client.repository.data_directory / run_id / "recording"
+    assert run["recordings"] == ["z.webm", "a.webm"]
+    assert client.repository.get_run(UUID(run_id)).recordings == run["recordings"]
+    url = f"/api/runs/{run_id}/recordings"
+    for number, (_, content) in enumerate(client.scenario.videos, start=1):
+        response = client.http.get(f"{url}/{number}.webm")
+        assert response.headers["content-type"] == "video/webm"
+        assert response.content == content
+    assert client.http.get(f"{url}/0.webm").status_code == 404
+    assert client.http.get(f"{url}/3.webm").status_code == 404
+    ranged = client.http.get(f"{url}/1.webm", headers={"Range": "bytes=0-2"})
+    assert ranged.status_code == 206
+    assert ranged.content == b"tab"
+    client.user.id = uuid4()
+    assert client.http.get(f"{url}/1.webm").status_code == 404
+
+
+def test_rerun_starts_without_previous_verdict_or_recordings(client):
+    client.scenario.events = [ReproductionVerdictEvent("reproduced", "$30", "$42", 2, "The total stayed at $42.")]
+    client.scenario.videos = [("first.webm", b"first")]
+    run_id = create_run(client)
+    original = finish_run(client, run_id)
+    assert original["verdict"]["verdict"] == "reproduced"
+    client.scenario.events = []
+    client.scenario.videos = []
+    created = client.http.post(f"/api/runs/{run_id}/rerun").json()["run"]
+    assert created["verdict"] is None
+    rerun = finish_run(client, created["id"])
+    assert rerun["verdict"]["verdict"] == "inconclusive"
+    assert rerun["recordings"] == []
+    assert not list((client.repository.data_directory / rerun["id"]).rglob("*.webm"))
+
+
+def test_report_is_ready_on_the_first_terminal_response(client):
+    client.scenario.allow_close.clear()
+    client.scenario.videos = [("tab.webm", b"finished video")]
+    run_id = create_run(client)
+    try:
+        assert client.scenario.closing.wait(2)
+        pending = client.http.get(f"/api/runs/{run_id}").json()["run"]
+        assert pending["status"] == "ready_for_follow_up"
+        assert pending["recordings"] == []
+    finally:
+        client.scenario.allow_close.set()
+    assert finish_run(client, run_id)["recordings"] == ["tab.webm"]
+    assert client.http.get(f"/api/runs/{run_id}/recordings/1.webm").content == b"finished video"

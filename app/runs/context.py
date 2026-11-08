@@ -28,3 +28,4 @@ class RunContext:
     sensitive_input_request_id: UUID | None = None
     mouse_controller: str | None = None
     control_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    finish_lock: asyncio.Lock = field(default_factory=asyncio.Lock)

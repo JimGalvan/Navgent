@@ -27,11 +27,20 @@ class RunRepository:
             "bug_report": "JSON",
             "repro_brief": "JSON",
             "evidence_frames": "JSON NOT NULL DEFAULT '[]'",
+            "reported_verdict": "JSON",
+            "recordings": "JSON NOT NULL DEFAULT '[]'",
         }
         with self._engine.begin() as connection:
             for name, definition in additions.items():
                 if name not in columns:
                     connection.execute(text(f"ALTER TABLE runs ADD COLUMN {name} {definition}"))
+            if "reported_verdict" not in columns:
+                connection.execute(text("""
+                    UPDATE runs SET reported_verdict = (
+                        SELECT payload FROM run_events WHERE run_id = runs.id
+                        AND event_type = 'reproduction.verdict' ORDER BY sequence DESC LIMIT 1
+                    )
+                """))
 
     @property
     def data_directory(self) -> Path:
@@ -65,8 +74,10 @@ class RunRepository:
             runs.append(RunRecord.model_validate(stored_run, from_attributes=True))
         return runs
 
-    def save_event(self, event: RunEvent) -> None:
+    def save_event(self, event: RunEvent, *, updated_run: RunRecord | None = None) -> None:
         with self._session_factory.begin() as session:
+            if updated_run is not None:
+                session.merge(self._build_run_model(updated_run))
             session.add(
                 RunEventModel(
                     id=event.id,
@@ -110,6 +121,8 @@ class RunRepository:
             bug_report=run.bug_report.model_dump() if run.bug_report else None,
             repro_brief=run.repro_brief,
             evidence_frames=frames,
+            reported_verdict=run.reported_verdict.model_dump() if run.reported_verdict else None,
+            recordings=run.recordings,
             status=run.status.value,
             max_runtime_seconds=run.max_runtime_seconds,
             final_output=run.final_output,

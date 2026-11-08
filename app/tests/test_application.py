@@ -15,6 +15,8 @@ from navgent.events import InputRequiredEvent, RunCompletedEvent, SessionStatusE
 
 
 class FakeSession:
+    recording_paths = ()
+
     def __init__(self):
         self.queue = asyncio.Queue()
         self.closed = asyncio.Event()
