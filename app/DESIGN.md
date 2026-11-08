@@ -122,7 +122,7 @@ One form presents optional steps, optional screenshot and video uploads, App URL
 
 ### Live execution
 
-The browser URL line, streamed frame, current action and captured-frame strip form one reading group. Action type is accented; the latest thumbnail receives the accent border. Plans use plain numbered rows, completed ticks, active color and selectable step detail. Form state and input requests appear only when emitted by the run. The agent stream scrolls automatically and shows a blinking caret while active. Reduced-motion preferences disable animation. The thin progress line reflects known plan completion during execution and is hidden for terminal statuses.
+The browser URL line, streamed frame, current action and captured-frame strip form one reading group. Action type is accented; the latest thumbnail receives the accent border. One plan timeline shows the brief's numbered steps: completed ticks replace numbers, a 2px lime left marker identifies the current step, and elapsed action time or “now” aligns on the right. The count reflects earlier completed steps. Sources and agent reasoning appear in the selected step's details rather than expanding each row. Form state and input requests appear only when emitted by the run. The agent stream scrolls automatically and shows a blinking caret while active. Reduced-motion preferences disable animation. The thin progress line reflects known plan completion during execution and is hidden for terminal statuses.
 
 ### Evidence report and data limits
 

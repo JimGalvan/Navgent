@@ -45,7 +45,9 @@ The run record exposes `bug_report`, `repro_brief` and `evidence_frames`. The ow
 
 The live viewer and report use the latest `reproduction.verdict` event. The run's `verdict` includes the expected and observed values, a reason, and an optional brief step. A completed run without an event reads as inconclusive. Failed, cancelled and timed-out runs show their execution status.
 
-Action events retain their value, reason, brief step and visible form fields. The Live screen advances the evidence plan from brief step numbers and shows the latest form snapshot. Reports pair each input action with the previous completed input's fields and mark changed lines. Observed verdict quotes appear on separate lines. Password actions preserve the agent's empty value.
+Action events retain their value, reason, brief step and visible form fields as JSON lists. New actions always include `brief_step`; no additional agent setting is needed. The live viewer uses one plan timeline, advances only to higher brief steps, and shows the latest form snapshot in Geist Mono. Completed steps have checkmarks, the current step has a lime marker, and timings come from recorded action timestamps. Select a step for its source and the agent's reasoning.
+
+Reports group actions under the matching brief instruction. Each input's before/after view compares its fields with the previous completed input, marking changed lines; a failed input does not replace that baseline. Observed verdict quotes appear on separate lines beside Expected, and a `not_reproduced` verdict has no failure-step attribution. Password actions preserve the agent's empty value without substituting other data. Reloads rebuild these views from stored events, and duplicate reconnect events are ignored. In the SauceDemo `problem_user` example, typing `Tester` into Last Name leaves First Name as `r`, not `Tester`.
 
 The owner can fetch the ordered saved event history at `GET /api/runs/<run-id>/events`. The Live screen reads this history before subscribing to updates, and ignores repeated event sequences during reconnects.
 
