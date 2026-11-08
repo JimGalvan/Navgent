@@ -65,12 +65,114 @@
             </div>
           </div>
         </section>
+        <section class="section credential-section" aria-labelledby="credentials-heading">
+          <div class="credential-heading">
+            <h2 id="credentials-heading">Credentials <span class="optional">Optional</span></h2>
+            <button class="text-button" id="credential-manage" type="button" aria-expanded="false" aria-controls="credential-manager">Manage credentials</button>
+          </div>
+          <p class="notice" id="credential-help">Only credentials allowed on this app's host appear here. Choose which accounts or contact details this run can use.</p>
+          <fieldset id="credential-selection" class="credential-selection" aria-label="Credentials for this run" aria-describedby="credential-help" disabled>
+            <div id="credential-picker"><p class="muted">Loading credentials…</p></div>
+          </fieldset>
+          <p id="credential-load-message" class="message" role="status"></p>
+          <button id="credential-retry" class="text-button" type="button" hidden>Retry loading credentials</button>
+        </section>
         <div class="actions form-footer">
           <span class="mono muted">Browser session · 10 minute limit</span>
           <button class="button" id="start-run" type="submit">Start reproduction</button>
         </div>
         <p id="form-message" class="message" role="status"></p>
       </form>
+      <section id="credential-manager" class="section credential-manager" aria-labelledby="credential-manager-heading" hidden>
+        <div class="credential-heading">
+          <h2 id="credential-manager-heading">Manage credentials</h2>
+          <button id="credential-close" class="text-button" type="button">Close</button>
+        </div>
+        <p class="notice">Save a login, password, or contact details. Saved values stay hidden when you edit.</p>
+        <ul id="credential-list" class="credential-list" aria-label="Saved credentials"></ul>
+        <h3 id="credential-editor-heading">Add a credential</h3>
+        <form id="credential-form">
+          <fieldset id="credential-editor" class="credential-editor">
+            <div class="two-col">
+              <div class="field">
+                <label for="credential-name">Name</label>
+                <input id="credential-name" required maxlength="80" placeholder="Staging test account" />
+              </div>
+              <div class="field">
+                <label for="credential-domains">Allowed domains</label>
+                <input id="credential-domains" required aria-describedby="credential-domain-help" placeholder="staging.example.com, *.example.com" />
+                <p id="credential-domain-help" class="notice">Separate domains with commas. *.example.com allows subdomains.</p>
+              </div>
+            </div>
+            <div class="two-col">
+              <div class="field">
+                <label for="credential-login">Login <span class="optional">Optional</span></label>
+                <input id="credential-login" maxlength="320" autocomplete="off" placeholder="Username or email" />
+              </div>
+              <div class="field">
+                <label for="credential-password">Password <span class="optional">Optional</span></label>
+                <input id="credential-password" type="password" maxlength="2000" autocomplete="new-password" placeholder="Password" />
+              </div>
+            </div>
+            <details class="credential-contact">
+              <summary>Contact details <span class="optional">Optional</span></summary>
+              <div class="two-col">
+                <div class="field">
+                  <label for="credential-email">Email</label>
+                  <input id="credential-email" type="email" maxlength="320" autocomplete="off" placeholder="you@example.com" />
+                </div>
+                <div class="field">
+                  <label for="credential-phone">Phone</label>
+                  <input id="credential-phone" type="tel" maxlength="50" autocomplete="off" placeholder="Include country code" />
+                </div>
+                <div class="field">
+                  <label for="credential-first-name">First name</label>
+                  <input id="credential-first-name" maxlength="100" autocomplete="off" />
+                </div>
+                <div class="field">
+                  <label for="credential-last-name">Last name</label>
+                  <input id="credential-last-name" maxlength="100" autocomplete="off" />
+                </div>
+              </div>
+            </details>
+            <fieldset id="credential-remove" class="credential-remove" hidden>
+              <legend>Remove saved fields</legend>
+              <p class="notice">Leave fields above blank to keep their saved values, or select fields below to remove them.</p>
+              <div id="credential-remove-options"></div>
+            </fieldset>
+            <div class="two-col credential-verification">
+              <div class="field">
+                <label for="credential-verification">Preferred verification</label>
+                <select id="credential-verification">
+                  <option value="">Ask me each time</option>
+                  <option value="sms">Text message</option>
+                  <option value="email">Email</option>
+                  <option value="authenticator_app">Authenticator app</option>
+                  <option value="phone_call">Phone call</option>
+                  <option value="push">Approval notification</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="credential-fallback">If unavailable</label>
+                <select id="credential-fallback" disabled>
+                  <option value="">Ask me</option>
+                  <option value="sms">Text message</option>
+                  <option value="email">Email</option>
+                  <option value="authenticator_app">Authenticator app</option>
+                  <option value="phone_call">Phone call</option>
+                  <option value="push">Approval notification</option>
+                </select>
+              </div>
+            </div>
+            <label class="credential-check"><input id="credential-default" type="checkbox" />Preselect for new runs</label>
+            <div class="credential-form-actions">
+              <button id="credential-save" class="button secondary" type="submit">Save credential</button>
+              <button id="credential-cancel" class="text-button" type="button" hidden>Cancel edit</button>
+            </div>
+          </fieldset>
+          <p id="credential-message" class="message" role="status"></p>
+        </form>
+      </section>
       <section class="section">
         <h2 class="section-title">Recent</h2>
         <div id="history"><p class="empty">Loading your runs…</p></div>

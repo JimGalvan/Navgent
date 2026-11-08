@@ -1,8 +1,7 @@
 """Hostname rules for credential allowlists.
 
 An entry is an exact hostname unless it carries a ``*.`` prefix, which also
-covers subdomains. A leading ``www.`` is dropped on both sides of every
-comparison.
+covers subdomains. Hosts with a leading ``www.`` remain distinct.
 """
 
 from __future__ import annotations
@@ -12,7 +11,6 @@ from collections.abc import Iterable
 from urllib.parse import urlsplit
 
 WILDCARD_PREFIX = "*."
-_WWW_PREFIX = "www."
 
 # Suffixes where anybody can host a site, so a wildcard over one would cover
 # sites other people control. Curated rather than the full Public Suffix List.
@@ -59,10 +57,6 @@ def normalize_hostname(value: str) -> str:
         raise ValueError(f"Invalid domain: {value}")
 
     hostname = hostname.rstrip(".").encode("idna").decode("ascii")
-    remainder = hostname[len(_WWW_PREFIX):]
-    # "www.com" is a domain in its own right, not a prefixed one.
-    if hostname.startswith(_WWW_PREFIX) and "." in remainder:
-        return remainder
     return hostname
 
 
