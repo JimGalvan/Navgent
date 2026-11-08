@@ -212,6 +212,15 @@ class ReproductionFindingEvent:
     event_type: Literal["reproduction.finding"] = field(default="reproduction.finding", init=False)
 
 
+@dataclass(frozen=True)
+class SandboxRequestBlockedEvent:
+    host: str
+    url: str
+    error: str
+    brief_step: int | None
+    event_type: Literal["sandbox.request_blocked"] = field(default="sandbox.request_blocked", init=False)
+
+
 _InputEvent: TypeAlias = (
     InputRequiredEvent
     | InputReceivedEvent
@@ -249,4 +258,5 @@ AgentEvent: TypeAlias = (
     | _SessionEvent
     | ReproductionVerdictEvent
     | ReproductionFindingEvent
+    | SandboxRequestBlockedEvent
 )

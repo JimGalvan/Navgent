@@ -1,11 +1,12 @@
 import asyncio
 import json
 import logging
+from collections.abc import Callable
 from functools import cache
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from playwright.async_api import BrowserContext, Page
+from playwright.async_api import BrowserContext, Page, Request
 from playwright.async_api import Frame as PlaywrightFrame
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
@@ -33,6 +34,7 @@ from navgent.browser.recording import (
     Recording,
     wall_time_ms,
 )
+from navgent.browser.request_blocks import BlockedRequest, RequestBlockTracker
 from navgent.browser.target_registry import TargetRegistry
 
 logger = logging.getLogger(__name__)
@@ -45,10 +47,15 @@ class BrowserSession:
             browser_manager: BrowserManager,
             trace_path: Path | None = None,
             recording_dir: Path | None = None,
+            allowed_hosts: tuple[str, ...] = (),
+            on_request_blocked: Callable[[BlockedRequest], None] | None = None,
     ):
         self._browser_manager = browser_manager
         self._trace_path = trace_path
         self._recording_dir = recording_dir
+        self._request_blocks = RequestBlockTracker(allowed_hosts) if allowed_hosts else None
+        self._on_request_blocked = on_request_blocked
+        self.current_brief_step: int | None = None
         self._recorders: list[PageRecorder] = []
         self._recording_starts: list[asyncio.Task[None]] = []
         self._performed_clicks: list[PerformedClick] = []
@@ -90,9 +97,16 @@ class BrowserSession:
             self._context = await browser.new_context(viewport=viewport)
             if self._recording_dir is not None:
                 self._context.on("page", self._start_recording)
+            if self._request_blocks is not None and self._on_request_blocked is not None:
+                self._context.on("requestfailed", self._report_failed_request)
             if self._trace_path is not None:
                 await self._context.tracing.start(screenshots=False, snapshots=True)
         return self._context
+
+    def _report_failed_request(self, request: Request) -> None:
+        blocked = self._request_blocks.check(request.url, request.failure, self.current_brief_step)
+        if blocked is not None:
+            self._on_request_blocked(blocked)
 
     def _start_recording(self, page: Page) -> None:
         recorder = PageRecorder(page, self._recording_dir, VIEWPORT_WIDTH, VIEWPORT_HEIGHT)

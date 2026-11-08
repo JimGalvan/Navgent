@@ -13,6 +13,7 @@ from navgent.browser.browser_manager import BrowserManager
 from navgent.browser.browser_session import BrowserSession
 from navgent.browser.constants import FRAME_QUALITY, FRAME_QUALITY_TAKEOVER
 from navgent.browser.recording import Recording
+from navgent.browser.request_blocks import BlockedRequest
 from navgent.browser_agent.browser_agent import build_browser_agent
 from navgent.browser_agent.context import AgentContext
 from navgent.credentials import CredentialProvider, SelectedCredentialProvider
@@ -28,6 +29,7 @@ from navgent.events import (
     RunCancelledEvent,
     RunCompletedEvent,
     RunFailedEvent,
+    SandboxRequestBlockedEvent,
     SensitiveInputCancelledEvent,
     SensitiveInputReceivedEvent,
     SessionStatusEvent,
@@ -67,7 +69,11 @@ class BrowserAgentSession:
             allowed_hosts=settings.allowed_hosts,
         )
         self._browser = BrowserSession(
-            self._browser_manager, trace_path=settings.trace_path, recording_dir=settings.recording_dir,
+            self._browser_manager,
+            trace_path=settings.trace_path,
+            recording_dir=settings.recording_dir,
+            allowed_hosts=settings.allowed_hosts,
+            on_request_blocked=self._report_blocked_request,
         )
         self._sensitive_inputs = SensitiveInputChannel()
         if credential_provider:
@@ -469,6 +475,10 @@ class BrowserAgentSession:
 
     async def _emit(self, event: AgentEvent) -> None:
         await self._event_queue.put(event)
+
+    def _report_blocked_request(self, blocked: BlockedRequest) -> None:
+        event = SandboxRequestBlockedEvent(blocked.host, blocked.url, blocked.error, blocked.brief_step)
+        self._event_queue.put_nowait(event)
 
     async def _await_task(self, task: asyncio.Task[None] | None) -> None:
         if task is None or task is asyncio.current_task():

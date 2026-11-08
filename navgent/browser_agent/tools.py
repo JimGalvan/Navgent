@@ -172,6 +172,7 @@ def build_browser_tools(
                 )
 
             last_brief_step = plan.brief_step
+            browser.current_brief_step = plan.brief_step
             previous_url = browser.page.url
             completed = []
             notes = []

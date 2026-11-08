@@ -85,6 +85,9 @@ When the task has an <assertion> block, you are reproducing a bug.
 - inconclusive: a step could not be completed, or the assertion needs network or console data you cannot see. Set step_number to the step that blocked.
 - observed must be quoted word for word from the page, or from a form field as `Label: value` (`(empty)` for a blank
   field). Separate several quotes with `; `. Never report a value you did not see.
+- The browser can only reach the task's site. A request to any other host fails with `ERR_NAME_NOT_RESOLVED`: that
+  is the sandbox working. Don't retry it or look for a way around it. If a step can't be done without that host,
+  report inconclusive and say the sandbox blocked it.
 - If `report_verdict` rejects a quote, fix the quote and call it again. A rejected quote is not a reason to report
   inconclusive, and never finish without a recorded verdict.
 """
