@@ -269,14 +269,14 @@ def test_report_pairs_input_snapshots_and_splits_observed_quotes(surface, status
     expect(after).to_contain_text("First Name: r")
     expect(before.locator(".field-changed")).to_have_count(1)
     expect(after.locator(".field-changed")).to_have_count(1)
-    expect(rows.nth(1)).to_contain_text("Step 3")
+    expect(rows.nth(1).locator("xpath=ancestor::details/summary")).to_contain_text("Type Tester into Last Name")
     expect(rows.nth(1)).to_contain_text("Check the last-name defect.")
     groups = page.locator("#action-log .action-group")
     expect(groups).to_have_count(3)
-    expect(groups.nth(0).locator(".action-group-title")).to_have_text("Step 2 · Type Demo into First Name")
-    expect(groups.nth(1).locator(".action-group-title")).to_have_text("Step 3 · Type Tester into Last Name")
+    expect(groups.nth(0).locator("xpath=ancestor::details/summary")).to_contain_text("Type Demo into First Name")
+    expect(groups.nth(1).locator("xpath=ancestor::details/summary")).to_contain_text("Type Tester into Last Name")
     expect(groups.nth(1).locator(".action-row")).to_have_count(2)
-    expect(groups.nth(2).locator(".action-group-title")).to_have_text("Step 4 · Click Continue")
+    expect(groups.nth(2).locator("xpath=ancestor::details/summary")).to_contain_text("Click Continue")
     expect(rows.nth(2).locator(".action-title")).to_have_text("type into Password")
     expect(rows.nth(3)).to_contain_text("Failed")
     expect(rows.nth(3)).to_contain_text("Last Name is required")
@@ -333,11 +333,15 @@ def test_media_only_submission_sends_all_selected_evidence(surface):
     page.locator("#expected").fill("The total should drop to $30.00")
     page.locator("#actual").fill("The total stays at $42.00")
     page.locator("#start-run").click()
-    expect(page.locator("#form-message")).to_contain_text("Add written steps")
+    expect(page.locator("#evidence-help")).to_contain_text("Provide at least one")
+    expect(page.locator("#evidence-error")).to_contain_text("Add written steps")
+    expect(page.locator("#steps")).to_be_focused()
+    expect(page.locator("#steps")).to_have_attribute("aria-invalid", "true")
     assert surface.state.uploads == []
     page.locator("#video-files").set_input_files({"name": "recording.webm", "mimeType": "video/webm", "buffer": b"video upload fixture"})
     page.locator("#shot-files").set_input_files({"name": "cart.jpg", "mimeType": "image/jpeg", "buffer": evidence_image()})
     expect(page.locator("#media-note")).to_contain_text("1 screenshot and 1 recording")
+    expect(page.locator("#evidence-error")).to_be_hidden()
     expect(page.locator("#form-message")).to_be_empty()
     capture(surface, "new-evidence")
     page.locator("#start-run").click()
@@ -350,6 +354,19 @@ def test_media_only_submission_sends_all_selected_evidence(surface):
     assert b'filename="cart.jpg"' in body
     assert b'filename="recording.webm"' in body
     assert b'name="steps_text"\r\n\r\n\r\n' in body
+
+
+def test_rejected_upload_names_the_file_and_keeps_accepted_evidence(surface):
+    page = surface.page
+    page.goto("http://reprobe.test/app")
+    page.locator("#shot-files").set_input_files([
+        {"name": "cart.jpg", "mimeType": "image/jpeg", "buffer": evidence_image()},
+        {"name": "notes.pdf", "mimeType": "application/pdf", "buffer": b"not an image"},
+    ])
+    expect(page.locator("#evidence-error")).to_contain_text("notes.pdf: unsupported format")
+    expect(page.locator("#file-list")).to_contain_text("cart.jpg")
+    expect(page.locator("#file-list")).not_to_contain_text("notes.pdf")
+    capture(surface, "evidence-rejection")
 
 
 def test_live_reading_phase_and_sources_survive_browser_progress(surface):
@@ -379,6 +396,9 @@ def test_report_shows_planned_assertion_reported_values_unknowns_and_frames(surf
     expect(page.locator("#report-steps li")).to_have_count(4)
     expect(page.locator("#report-steps")).to_contain_text("video 00:07")
     expect(page.locator("#report-actual")).to_have_text("$42.00")
+    page.locator("#comparison-section summary").click()
+    page.locator("#report-brief summary").click()
+    page.locator("#key-frames-section summary").click()
     expect(page.get_by_text("User-reported actual", exact=True)).to_be_visible()
     expect(page.locator("#assertion-check")).to_have_text(BRIEF["assertion"]["check"])
     expect(page.locator("#assertion-look-in")).to_have_text("Network")
@@ -433,12 +453,22 @@ def test_report_plays_the_first_recording_and_links_every_tab(surface, recorded_
     page = surface.page
     page.goto(f"http://reprobe.test/app/reports/{RUN_ID}")
     panel = page.locator("#verdict")
-    expect(panel.locator("h2")).to_have_text("Reproduced")
+    expect(page.locator("#run-status")).to_have_text("Reproduced")
+    expect(panel.locator("h2")).to_have_text("Checks")
     expect(panel).to_contain_text("Step 3")
-    expect(panel).to_contain_text("Remove the bottle")
     expect(panel).to_contain_text(surface.state.run["verdict"]["reason"])
     expect(panel.locator(".bad")).to_have_text("$42")
     expect(panel.get_by_text("$30", exact=True)).to_be_visible()
+    page.locator("#proof-frame").click()
+    expect(page.locator("#evidence-section")).to_be_visible()
+    expect(page.locator("#recording-section")).to_be_hidden()
+    page.locator("#proof-frame").press("ArrowLeft")
+    expect(page.locator("#proof-video")).to_be_focused()
+    expect(page.locator("#proof-video")).to_have_attribute("aria-selected", "true")
+    page.locator("#proof-video").press("End")
+    expect(page.locator("#proof-frame")).to_be_focused()
+    page.locator("#proof-frame").press("Home")
+    expect(page.locator("#proof-video")).to_be_focused()
     video = page.locator("#recording-player")
     expect(video).to_be_visible()
     page.wait_for_function("document.querySelector('video').videoWidth > 0")
@@ -454,6 +484,6 @@ def test_report_plays_the_first_recording_and_links_every_tab(surface, recorded_
     capture(surface, "report-verdict")
     surface.state.run["verdict"].update(verdict="not_reproduced", observed="$30")
     page.reload()
-    expect(panel.locator("h2")).to_have_text("Not reproduced")
+    expect(page.locator("#run-status")).to_have_text("Not reproduced")
     expect(panel).not_to_contain_text("Step 3")
     expect(panel.locator(".bad")).to_have_count(0)

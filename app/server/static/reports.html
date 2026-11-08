@@ -16,17 +16,21 @@
       ><a href="/preview/new">New</a><a href="/preview/live">Live</a
       ><a href="/preview/report">Report</a>
     </div>
-    <main class="narrow">
-      <div class="actions" style="margin-top: 0">
-        <h1>Your reports.</h1>
-        <a class="button" href="/app">New reproduction</a>
-      </div>
-      <p class="muted">
-        A record of your browser runs, their output, and the evidence available.
-      </p>
+    <main class="reports-workspace">
+      <header class="reports-heading">
+        <div><h1>Reports</h1><p id="reports-count" class="mono muted" role="status">Loading your bugs…</p></div>
+        <a class="button" href="/app">Test a bug</a>
+      </header>
       <p id="history-message" class="message" role="status"></p>
-      <section class="section">
-        <h2 class="section-title">Reproductions</h2>
+      <section aria-labelledby="latest-heading">
+        <div class="reports-list-heading">
+          <h2 id="latest-heading" class="section-title">Latest result</h2>
+          <div id="report-filters" class="report-tabs" role="group" aria-label="Filter by latest result">
+            <button type="button" data-filter="all" aria-pressed="true">All</button>
+            <button type="button" data-filter="reproduced" aria-pressed="false">Reproduced</button>
+            <button type="button" data-filter="not_reproduced" aria-pressed="false">Not reproduced</button>
+          </div>
+        </div>
         <div id="history"><p class="empty">Loading your runs…</p></div>
       </section>
     </main>
