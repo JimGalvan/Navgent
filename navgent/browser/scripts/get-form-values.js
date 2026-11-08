@@ -1,4 +1,4 @@
-(() => {
+((sensitiveControls) => {
   const SKIPPED_TYPES = ['password', 'hidden', 'submit', 'button', 'reset', 'image', 'file'];
 
   function isVisible(control) {
@@ -36,10 +36,11 @@
     return control.value;
   }
 
+  const sensitive = new Set(sensitiveControls || []);
   const fields = [];
   for (const control of document.querySelectorAll('input, textarea, select')) {
     const type = (control.getAttribute('type') || '').toLowerCase();
-    if (SKIPPED_TYPES.includes(type) || !isVisible(control)) {
+    if (sensitive.has(control) || SKIPPED_TYPES.includes(type) || !isVisible(control)) {
       continue;
     }
     const box = control.getBoundingClientRect();
@@ -50,4 +51,4 @@
     });
   }
   return fields;
-})()
+})

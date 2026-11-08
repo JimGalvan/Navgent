@@ -167,7 +167,8 @@ class RunManager:
     async def _start_session_locked(self, context: RunContext, task: str) -> None:
         run = context.run
         sandbox_options = {}
-        if self._sandbox_controller.enabled:
+        host = None
+        if self._sandbox_controller.enabled or run.credential_ids:
             target = run.bug_report.target_url if run.bug_report else None
             if target is None:
                 try:
@@ -176,8 +177,11 @@ class RunManager:
                     pass
             parsed = urlsplit(target or "")
             if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-                raise SandboxError("A sandboxed run requires an explicit http or https target URL.")
+                if self._sandbox_controller.enabled:
+                    raise SandboxError("A sandboxed run requires an explicit http or https target URL.")
+                raise SandboxError("A run with credentials requires an explicit http or https target URL.")
             host = parsed.hostname.encode("idna").decode("ascii").lower()
+        if self._sandbox_controller.enabled:
             context.sandbox_attempted = True
             context.sandbox_started_at = time.monotonic()
             await self._publish(context, "sandbox.starting", {"allowed_hosts": [host]})
@@ -197,6 +201,7 @@ class RunManager:
             recording_dir=self._evidence.run_directory(run) / "recording",
             credential_ids=tuple(run.credential_ids),
             credential_service=self._credential_service,
+            credential_host=host,
             headless=self._headless,
             max_runtime_seconds=run.max_runtime_seconds,
             sensitive_input_window_seconds=self._sensitive_input_window_seconds,

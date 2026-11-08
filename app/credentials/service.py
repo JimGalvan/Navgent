@@ -136,7 +136,10 @@ class CredentialService:
         plaintext = self._cipher.decrypt(
             credential.encrypted_payload, self._associated_data(credential)
         )
-        return CredentialSecret.model_validate(json.loads(plaintext))
+        try:
+            return CredentialSecret.model_validate(json.loads(plaintext))
+        except (ValueError, TypeError):
+            raise CredentialInvalidError("The saved credential could not be read") from None
 
     @staticmethod
     def _associated_data(credential: CredentialRecord) -> bytes:

@@ -23,6 +23,7 @@ def build_agent_runtime(
         sensitive_input_window_seconds: float = constants.DEFAULT_SENSITIVE_INPUT_WINDOW_SECONDS,
         browser_ws_endpoint: str | None = None,
         allowed_hosts: tuple[str, ...] = (),
+        credential_host: str | None = None,
 ) -> BrowserAgentSession:
     settings = replace(
         read_agent_settings(thread_id),
@@ -36,7 +37,12 @@ def build_agent_runtime(
         settings = replace(settings, headless=headless)
     credential_provider = None
     if credential_service and credential_ids and user_id:
-        credential_provider = CredentialServiceProvider(credential_service, user_id, credential_ids)
+        if not credential_host:
+            raise ValueError("A target URL is required to use saved credentials")
+        if allowed_hosts and allowed_hosts != (credential_host,):
+            raise ValueError("Credentials must use the sandbox's target host")
+        settings = replace(settings, trace_path=None, credential_host=credential_host)
+        credential_provider = CredentialServiceProvider(credential_service, user_id, credential_ids, credential_host)
     return BrowserAgentSession(
         settings, credential_provider=credential_provider, selected_credential_ids=credential_ids,
     )

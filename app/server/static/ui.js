@@ -1,4 +1,5 @@
 import { mountRecordings } from "./recordings.js";
+import { mountCredentials } from "./credentials.js";
 import { renderSandbox } from "./sandbox.js";
 import { arrangeReportSteps, renderBugHistory, renderChecks, renderFindingProof, renderReportHeader, renderReports, setupEnvironmentRerun, setupProof } from "./reports.js";
 
@@ -309,6 +310,7 @@ if (page === "account") {
   };
 }
 if (page === "new") {
+  const credentials = mountCredentials(api, preview);
   const fields = {
     url: "target-url",
     steps: "steps",
@@ -438,15 +440,18 @@ if (page === "new") {
       $("form-message").textContent = "Use an http or https app URL.";
       return;
     }
+    $("start-run").disabled = true;
+    await credentials.ready;
     const body = new FormData();
     body.set("target_url", data.url);
     body.set("expected", data.expected);
     body.set("actual", data.actual);
     body.set("steps_text", data.steps);
     body.set("max_runtime_seconds", "600");
+    for (const id of credentials.selectedIds()) body.append("credential_ids", id);
     for (const file of files.shots) body.append("screenshots", file);
     for (const file of files.video) body.append("video", file);
-    $("start-run").disabled = true;
+    credentials.setBusy(true);
     $("form-message").textContent = "Uploading evidence…";
     try {
       const result = await api("/api/reproductions", {
@@ -460,7 +465,7 @@ if (page === "new") {
       location.href = "/app/runs/" + result.run.id;
     } catch (error) {
       $("form-message").textContent = error.message;
-      $("start-run").disabled = false;
+      credentials.setBusy(false);
     }
   };
   history();

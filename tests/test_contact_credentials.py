@@ -28,6 +28,9 @@ class ObservedBrowser:
     async def fill(self, element_index, value):
         self.fills.append((element_index, value))
 
+    async def fill_credential(self, element_index, target_host, read_value):
+        self.fills.append((element_index, await read_value(self.current_hostname)))
+
     def take_performed_clicks(self):
         return []
 

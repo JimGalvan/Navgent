@@ -273,6 +273,172 @@ textarea::placeholder {
   grid-template-columns: 1fr 1fr;
   gap: 32px;
 }
+.credential-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px 24px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 18px;
+}
+.credential-heading h2 {
+  font-size: 18px;
+  margin: 0;
+}
+.credential-heading .optional {
+  margin-left: 8px;
+}
+.credential-selection,
+.credential-editor {
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+#credential-picker {
+  display: grid;
+  gap: 8px;
+}
+#credential-picker p {
+  margin: 0;
+  font-size: 13px;
+}
+.credential-choice,
+.credential-check {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.credential-choice {
+  padding: 10px 12px;
+  background: var(--surface);
+  border-radius: 4px;
+}
+.credential-choice:hover {
+  background: #202023;
+}
+.credential-choice:has(input:checked) {
+  outline: 1px solid var(--input-line);
+}
+.credential-choice small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+.credential-choice span,
+.credential-description {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.credential-choice input,
+.credential-check input {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  padding: 0;
+  accent-color: var(--lime);
+}
+.credential-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 28px;
+}
+.credential-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 24px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--faint-line);
+}
+.credential-description {
+  flex: 1 1 220px;
+}
+.credential-description p {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+.credential-default-label {
+  margin-left: 10px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.credential-row-actions,
+.credential-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 24px;
+}
+.credential-manager h3 {
+  font-size: 18px;
+  font-weight: 500;
+  margin: 28px 0 24px;
+  overflow-wrap: anywhere;
+}
+.credential-contact > summary {
+  cursor: pointer;
+  padding: 8px 0 16px;
+  min-height: 44px;
+}
+.credential-contact[open] > summary {
+  margin-bottom: 12px;
+}
+.credential-remove {
+  margin: 0 0 24px;
+  padding: 16px;
+  border: 1px solid var(--line);
+}
+.credential-remove legend {
+  font-size: 13px;
+  padding: 0 8px;
+}
+.credential-remove .notice {
+  margin: 0 0 8px;
+}
+#credential-remove-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+}
+.credential-editor .field .notice {
+  margin: 0;
+  font-size: 12px;
+}
+.credential-verification {
+  margin-top: 16px;
+}
+.credential-editor select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 8px;
+  border: 1px solid var(--input-line);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.credential-editor select:disabled {
+  color: var(--muted);
+}
+.credential-form-actions {
+  margin-top: 24px;
+}
+#credential-message.success {
+  color: var(--lime);
+}
+.credential-selection:disabled,
+.credential-editor:disabled {
+  opacity: 0.65;
+}
 .mono,
 code,
 time {
