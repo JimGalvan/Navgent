@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#0c0c0d" />
+    <title>Live run · Reprobe</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script type="module" src="/static/ui.js"></script>
+  </head>
+  <body data-page="live">
+    <header class="top" data-app-header></header>
+    <div id="preview-banner" class="preview-banner" hidden>
+      <span>Design preview · sample data, no agent execution</span
+      ><a href="/preview/new">New</a><a href="/preview/live">Live</a
+      ><a href="/preview/report">Report</a>
+    </div>
+    <main class="wide">
+      <div class="run-header">
+        <div>
+          <div class="status">
+            <span class="dot" id="run-dot"></span
+            ><span id="run-status" role="status">Connecting</span
+            ><span class="muted">·</span
+            ><span class="mono muted" id="run-id"></span>
+          </div>
+          <h1 id="run-title">Opening your reproduction…</h1>
+        </div>
+        <div class="run-controls">
+          <time id="elapsed">00:00 / 10:00</time
+          ><button id="cancel-run" class="button danger">Stop run</button
+          ><a id="view-report" class="button secondary" hidden>View report</a>
+        </div>
+      </div>
+      <p id="run-message" class="message" role="status"></p>
+      <section id="verdict" class="verdict" aria-label="Reproduction verdict" aria-live="polite" hidden></section>
+      <progress id="run-progress" class="run-progress" max="100" value="0" aria-label="Plan progress"></progress>
+      <div class="viewer-grid">
+        <section>
+          <div class="browser-chrome">
+            <span class="mono muted" id="browser-url"
+              >Waiting for the browser</span
+            ><span class="mono" id="feed-label">LIVE</span>
+          </div>
+          <div class="browser-viewport" id="viewport">
+            <p id="screen-waiting">
+              Navgent is preparing the browser.<br />The first frame will appear
+              here.
+            </p>
+            <img id="browser-screen" alt="Live browser screenshot" hidden />
+          </div>
+          <div id="latest-action" class="browser-action mono">
+            Waiting for the first action
+          </div>
+          <div id="frame-strip" class="frame-strip" aria-label="Captured browser frames" hidden></div>
+          <section id="input-panel" class="answer-panel" hidden>
+            <h2 id="input-question">Navgent needs your input</h2>
+            <form id="input-form">
+              <label for="input-answer">Your answer</label
+              ><textarea
+                id="input-answer"
+                required
+                rows="2"
+                maxlength="10000"
+              ></textarea>
+              <div class="actions">
+                <button class="button" type="submit">Continue run</button
+                ><button
+                  class="text-button"
+                  id="decline-input"
+                  type="button"
+                  hidden
+                >
+                  Continue without a code
+                </button>
+              </div>
+            </form>
+          </section>
+        </section>
+        <aside>
+          <h2 class="section-title" id="plan-title">Plan</h2>
+          <div id="plan">
+            <p class="muted">The plan will appear after the evidence is read.</p>
+          </div>
+          <div class="step-detail">
+            <h2 id="step-heading">Why this step</h2>
+            <div id="step-detail"><p>Select a plan item to see its source and the agent's reasoning.</p></div>
+          </div>
+          <section id="form-state-section" hidden>
+            <h2 class="section-title">Form state</h2>
+            <div id="form-state" class="form-values mono"></div>
+          </section>
+        </aside>
+      </div>
+      <details id="sandbox-panel" class="sandbox-panel" hidden>
+        <summary>Sandbox · <span id="sandbox-status" role="status"></span></summary>
+        <dl id="sandbox-values" class="run-metadata"></dl>
+      </details>
+      <section class="agent-stream">          <h2 class="section-title">Agent stream</h2>
+          <div class="stream" id="activity" aria-live="off">
+            <p class="muted">Waiting for events…</p>
+          </div>
+          <p id="agent-output" class="muted output"></p>
+</section>
+      <footer class="run-footer mono">
+        Powered by Navgent · browser actions and frames update live. Reports
+        preserve available evidence after the session ends.
+      </footer>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,1241 @@
+import { mountRecordings } from "./recordings.js";
+import { renderSandbox } from "./sandbox.js";
+import { arrangeReportSteps, renderBugHistory, renderChecks, renderFindingProof, renderReportHeader, renderReports, setupEnvironmentRerun, setupProof } from "./reports.js";
+
+const $ = (id) => document.getElementById(id);
+const page = document.body.dataset.page;
+const header = document.querySelector("[data-app-header]");
+if (header) header.innerHTML = '<a class="brand" href="/">Reprobe</a><nav aria-label="Primary"><a data-nav="new" href="/app">New</a><a data-nav="live" href="/app">Live</a><a data-nav="reports" href="/app/reports">Reports</a><span id="account-email" class="account-name muted"></span><a id="logout" href="/logout">Log out</a></nav>';
+const preview = location.pathname.startsWith("/preview");
+const terminal = new Set(["succeeded", "failed", "cancelled", "timed_out"]);
+const draftKey = "reprobe.draft";
+const sample = {
+  url: "https://staging.northwind.test/cart",
+  steps:
+    "1. Open the cart page\n2. Add Trail Pack 30L and Insulated Bottle\n3. Apply coupon SAVE50\n4. Remove the bottle\n5. Check the total",
+  expected: "Total drops to $30.00 after removing the bottle.",
+  actual: "Total stays at $42.00 until the page is refreshed.",
+  title: "Cart total stale after removing discounted item",
+};
+const samplePlan = [
+  "Read the evidence",
+  "Plan the reproduction",
+  "Open cart page",
+  "Add two items",
+  "Apply SAVE50",
+  "Remove Insulated Bottle",
+  "Check the total",
+  "Capture evidence",
+];
+const labels = {
+  queued: "Queued",
+  reading_evidence: "Reading evidence",
+  running: "Running",
+  waiting_for_input: "Needs your input",
+  ready_for_follow_up: "Saving result",
+  succeeded: "Completed",
+  failed: "Failed",
+  cancelled: "Stopped",
+  timed_out: "Timed out",
+};
+const verdictLabels = {
+  reproduced: "Reproduced",
+  not_reproduced: "Not reproduced",
+  inconclusive: "Inconclusive",
+};
+let lastLive = null;
+try {
+  lastLive = sessionStorage.getItem("reprobe.last-run");
+} catch {}
+for (const link of document.querySelectorAll("[data-nav]")) {
+  if (
+    link.dataset.nav === page ||
+    (page === "report" && link.dataset.nav === "reports")
+  )
+    { link.classList.add("active"); link.setAttribute("aria-current", "page"); }
+  if (preview)
+    link.href =
+      "/preview/" +
+      (link.dataset.nav === "reports" ? "reports" : link.dataset.nav);
+  else if (link.dataset.nav === "live" && lastLive)
+    link.href = "/app/runs/" + lastLive;
+}
+if (preview) {
+  $("preview-banner").hidden = false;
+  $("logout").hidden = true;
+  for (const link of document.querySelectorAll(
+    'a[href="/app"],a[href="/app/reports"]',
+  ))
+    link.href =
+      link.getAttribute("href") === "/app"
+        ? "/preview/new"
+        : "/preview/reports";
+}
+$("logout")?.addEventListener("click", () => {
+  try {
+    sessionStorage.removeItem(draftKey);
+    sessionStorage.removeItem("reprobe.last-run");
+  } catch {}
+});
+async function api(url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+      ...options.headers,
+    },
+  });
+  const body = await response.json().catch(() => ({}));
+  if (response.status === 401 && page !== "account") {
+    location.href = "/login";
+    throw new Error("Please log in again.");
+  }
+  if (!response.ok)
+    throw new Error(
+      typeof body.detail === "string"
+        ? body.detail
+        : "Please check the form and try again.",
+    );
+  return body;
+}
+function node(tag, text, className) {
+  const el = document.createElement(tag);
+  if (text !== undefined) el.textContent = text;
+  if (className) el.className = className;
+  return el;
+}
+function taskData(task) {
+  try {
+    const data = JSON.parse(task);
+    return {
+      title: data.title || data.steps?.split("\n")[0] || "Reproduction",
+      ...data,
+    };
+  } catch {
+    return { title: task, steps: task };
+  }
+}
+function shortId(id) {
+  return id.startsWith("RUN-") ? id : id.slice(0, 8).toUpperCase();
+}
+function statusElement(status) {
+  const el = node("span", undefined, "status");
+  el.append(
+    node("span", "", `dot ${status}`),
+    node("span", verdictLabels[status] || labels[status] || status),
+  );
+  return el;
+}
+function durationText(run) {
+  const end = terminal.has(run.status) ? Date.parse(run.updated_at) : Date.now();
+  const seconds = Math.max(0, Math.floor((end - Date.parse(run.created_at)) / 1000));
+  return Number.isFinite(seconds) ? Math.floor(seconds / 60) + "m " + String(seconds % 60).padStart(2, "0") + "s" : "";
+}
+function showHistory(runs) {
+  if (page === "reports") {
+    renderReports(runs, api);
+    return;
+  }
+  const host = $("history");
+  host.replaceChildren();
+  if (!runs.length) {
+    host.append(
+      node(
+        "p",
+        "No reproductions yet. Start with a URL and the steps that trigger the bug.",
+        "empty",
+      ),
+    );
+    return;
+  }
+  for (const run of runs) {
+    const d = taskData(run.task);
+    const a = node("a", undefined, "history-row");
+    a.href = preview
+      ? "/preview/" + (run.status === "running" ? "live" : "report")
+      : `/app/${terminal.has(run.status) ? "reports" : "runs"}/${run.id}`;
+    a.append(
+      node("span", shortId(run.id), "mono muted"),
+      node("span", d.title),
+      run.verdict ? statusElement(run.verdict.verdict) : statusElement(run.status),
+      node("time", durationText(run), "mono muted"),
+    );
+    host.append(a);
+  }
+}
+async function history() {
+  try {
+    if (preview) {
+      showHistory([
+        {
+          id: "RUN-0142",
+          task: JSON.stringify(sample),
+          status: "running",
+          created_at: new Date().toISOString(),
+        },
+        {
+          id: "RUN-0141",
+          task: JSON.stringify({
+            title: "Date picker closes on the first click",
+          }),
+          status: "succeeded",
+          created_at: new Date().toISOString(),
+        },
+        {
+          id: "RUN-0140",
+          task: JSON.stringify({ title: "Avatar upload never finishes" }),
+          status: "failed",
+          created_at: new Date().toISOString(),
+        },
+      ]);
+    } else showHistory((await api("/api/runs")).runs);
+  } catch (error) {
+    $("history").replaceChildren(node("p", error.message, "message"));
+    if (page === "reports") $("reports-count").textContent = "Reports could not be loaded. Reload to try again.";
+  }
+}
+if (!preview && ["new", "live", "reports", "report"].includes(page))
+  api("/api/auth/me")
+    .then((user) => {
+      $("account-email").textContent = user.email;
+    })
+    .catch((error) => {
+      const message =
+        $("form-message") ||
+        $("run-message") ||
+        $("history-message") ||
+        $("report-message");
+      if (message) message.textContent = error.message;
+    });
+if (page === "account") {
+  const path = location.pathname;
+  const mode =
+    path === "/register"
+      ? "register"
+      : path === "/verify-email"
+        ? "verify"
+        : path === "/forgot-password"
+          ? "forgot"
+          : path === "/reset-password"
+            ? "reset"
+            : "login";
+  const titles = {
+    register: "Make room for the evidence.",
+    login: "Welcome back.",
+    verify: "Check your inbox.",
+    forgot: "Let’s get you back in.",
+    reset: "Set a new password.",
+  };
+  const descriptions = {
+    register: "Create your Reprobe account with email and password.",
+    login: "Log in to your Reprobe workspace.",
+    verify: "Enter the verification code sent to your email.",
+    forgot: "We’ll send a link to reset your password.",
+    reset: "Choose a new password for your account.",
+  };
+  const actions = {
+    register: "Create account",
+    login: "Log in",
+    verify: "Verify email",
+    forgot: "Send reset link",
+    reset: "Save new password",
+  };
+  $("auth-title").textContent = titles[mode];
+  $("auth-description").textContent = descriptions[mode];
+  $("auth-submit").textContent = actions[mode];
+  $("password-field").hidden = ["verify", "forgot"].includes(mode);
+  $("password").required = !$("password-field").hidden;
+  $("password").autocomplete =
+    mode === "register" || mode === "reset"
+      ? "new-password"
+      : "current-password";
+  $("code-field").hidden = mode !== "verify";
+  $("code").required = mode === "verify";
+  $("forgot-link").hidden = mode !== "login";
+  if (mode === "register") {
+    $("auth-switch").replaceChildren(node("span", "Already have an account? "));
+    const a = node("a", "Log in");
+    a.href = "/login";
+    $("auth-switch").append(a);
+  } else if (mode !== "login") {
+    $("auth-switch").replaceChildren();
+    const a = node("a", "Back to log in");
+    a.href = "/login";
+    $("auth-switch").append(a);
+  }
+  if (["verify", "reset"].includes(mode)) {
+    $("email").required = false;
+    $("email").closest(".field").hidden = true;
+  }
+  if (new URLSearchParams(location.search).has("reset"))
+    $("auth-message").textContent = "Password updated. You can log in now.";
+  $("show-password").onclick = () => {
+    const visible = $("password").type === "password";
+    $("password").type = visible ? "text" : "password";
+    $("show-password").textContent = visible ? "Hide" : "Show";
+    $("show-password").setAttribute(
+      "aria-label",
+      visible ? "Hide password" : "Show password",
+    );
+  };
+  api("/api/capabilities")
+    .then((c) => {
+      $("auth-config").hidden = c.auth_configured;
+    })
+    .catch(() => {});
+  $("account-form").onsubmit = async (event) => {
+    event.preventDefault();
+    $("auth-submit").disabled = true;
+    $("auth-message").textContent = "";
+    try {
+      const result = await api("/api/auth/" + mode, {
+        method: "POST",
+        body: JSON.stringify({
+          email: $("email").value || "verification@reprobe.local",
+          password: $("password").value,
+          code: $("code").value,
+          token: new URLSearchParams(location.search).get("token") || "",
+        }),
+      });
+      $("password").value = "";
+      $("code").value = "";
+      if (result.redirect) location.href = result.redirect;
+      else $("auth-message").textContent = result.message;
+    } catch (error) {
+      $("auth-message").textContent = error.message;
+    } finally {
+      $("auth-submit").disabled = false;
+    }
+  };
+}
+if (page === "new") {
+  const fields = {
+    url: "target-url",
+    steps: "steps",
+    expected: "expected",
+    actual: "actual",
+  };
+  const readDraft = () =>
+    Object.fromEntries(
+      Object.entries(fields).map(([key, id]) => [key, $(id).value]),
+    );
+  let draft = preview ? sample : {};
+  try {
+    if (!preview) draft = JSON.parse(sessionStorage.getItem(draftKey) || "{}");
+  } catch {}
+  for (const [key, id] of Object.entries(fields)) {
+    $(id).value = draft[key] || "";
+    $(id).addEventListener("input", () => {
+      if (!preview)
+        try {
+          sessionStorage.setItem(draftKey, JSON.stringify(readDraft()));
+        } catch {}
+    });
+  }
+  const files = { video: [], shots: [] };
+  const evidenceError = $("evidence-error");
+  function showEvidenceError(message) {
+    evidenceError.textContent = message;
+    evidenceError.hidden = !message;
+  }
+  $("steps").addEventListener("input", () => {
+    $("steps").removeAttribute("aria-invalid");
+    if ($("steps").value.trim()) showEvidenceError("");
+  });
+  let objectUrls = [];
+  function renderFiles() {
+    objectUrls.forEach(URL.revokeObjectURL);
+    objectUrls = [];
+    $("file-list").replaceChildren();
+    for (const [kind, chosen] of Object.entries(files)) chosen.forEach((file, i) => {
+      const div = node("div", undefined, "file-item");
+      const media = document.createElement(
+        kind === "video" ? "video" : "img",
+      );
+      const url = URL.createObjectURL(file);
+      objectUrls.push(url);
+      media.src = url;
+      if (kind === "video") media.controls = true;
+      else media.alt = file.name;
+      const remove = node("button", "Remove", "text-button");
+      remove.type = "button";
+      remove.onclick = () => {
+        files[kind].splice(i, 1);
+        renderFiles();
+      };
+      div.append(media, node("p", file.name), remove);
+      if (kind === "shots" && i > 0) {
+        const move = node("button", "Move earlier", "text-button");
+        move.type = "button";
+        move.onclick = () => {
+          [chosen[i - 1], chosen[i]] = [chosen[i], chosen[i - 1]];
+          renderFiles();
+        };
+        div.append(move);
+      }
+      $("file-list").append(div);
+    });
+    const count = files.shots.length + files.video.length;
+    const selected = [];
+    if (files.shots.length) selected.push(`${files.shots.length} screenshot${files.shots.length === 1 ? "" : "s"}`);
+    if (files.video.length) selected.push("1 recording");
+    $("media-note").hidden = count === 0;
+    $("media-note").textContent = preview
+      ? "Design preview only. Files will not be uploaded or analyzed."
+      : `${selected.join(" and ")} selected. All selected media and written steps will be read together. This can take up to 30 seconds.`;
+  }
+  function accept(kind, selection) {
+    $("form-message").textContent = "";
+    const valid = [];
+    const rejected = [];
+    const limit = kind === "video" ? 50 : 10;
+    const slots = kind === "video" ? 1 : 10 - files.shots.length;
+    for (const file of selection) {
+      const supported = kind === "video" ? /\.(mp4|webm|mov)$/i.test(file.name) : /\.(png|jpe?g|webp|gif|bmp|tiff?)$/i.test(file.name);
+      if (!supported) rejected.push(`${file.name}: unsupported format. Choose ${kind === "video" ? "MP4, WebM, or MOV" : "PNG, JPEG, WebP, GIF, BMP, or TIFF"}.`);
+      else if (file.size > limit * 1024 ** 2) rejected.push(`${file.name}: exceeds ${limit} MB. Choose a smaller file.`);
+      else if (valid.length >= slots) rejected.push(`${file.name}: ${kind === "video" ? "only one recording is allowed" : "the 10-image limit has been reached"}. Remove a file before adding another.`);
+      else valid.push(file);
+    }
+    showEvidenceError(rejected.join("\n"));
+    files[kind] =
+      kind === "video"
+        ? (valid.length ? valid : files.video)
+        : [...files.shots, ...valid];
+    if (files.shots.length || files.video.length) $("steps").removeAttribute("aria-invalid");
+    renderFiles();
+  }
+  $("video-files").onchange = (e) => accept("video", e.target.files);
+  $("shot-files").onchange = (e) => accept("shots", e.target.files);
+  for (const drop of document.querySelectorAll("[data-drop]")) {
+    drop.ondragover = (e) => e.preventDefault();
+    drop.ondrop = (e) => {
+      e.preventDefault();
+      accept(drop.dataset.drop, e.dataTransfer.files);
+    };
+  }
+  $("reproduction-form").onsubmit = async (event) => {
+    event.preventDefault();
+    if (preview) {
+      location.href = "/preview/live";
+      return;
+    }
+    const data = readDraft();
+    if (!data.steps.trim() && !files.shots.length && !files.video.length) {
+      showEvidenceError("Add written steps, screenshots, or a recording before starting the reproduction.");
+      $("steps").setAttribute("aria-invalid", "true");
+      $("steps").focus();
+      return;
+    }
+    let url;
+    try {
+      url = new URL(data.url);
+    } catch {
+      $("form-message").textContent = "Use a valid http or https app URL.";
+      return;
+    }
+    if (!["http:", "https:"].includes(url.protocol)) {
+      $("form-message").textContent = "Use an http or https app URL.";
+      return;
+    }
+    const body = new FormData();
+    body.set("target_url", data.url);
+    body.set("expected", data.expected);
+    body.set("actual", data.actual);
+    body.set("steps_text", data.steps);
+    body.set("max_runtime_seconds", "600");
+    for (const file of files.shots) body.append("screenshots", file);
+    for (const file of files.video) body.append("video", file);
+    $("start-run").disabled = true;
+    $("form-message").textContent = "Uploading evidence…";
+    try {
+      const result = await api("/api/reproductions", {
+        method: "POST",
+        body,
+      });
+      try {
+        sessionStorage.setItem("reprobe.last-run", result.run.id);
+        sessionStorage.removeItem(draftKey);
+      } catch {}
+      location.href = "/app/runs/" + result.run.id;
+    } catch (error) {
+      $("form-message").textContent = error.message;
+      $("start-run").disabled = false;
+    }
+  };
+  history();
+}
+if (page === "reports") history();
+const cartMarkup =
+  '<div class="demo-cart"><div class="cart-head"><b>northwind supply</b><span>Cart (1)</span></div><div class="cart-content"><div><h2>Your cart</h2><div class="cart-product"><span>Trail Pack 30L<br>Moss · qty 1</span><b>$60.00</b></div></div><div><h2>Summary</h2><div class="cart-product"><span>Subtotal</span><span>$60.00</span></div><div class="cart-product"><span>SAVE50</span><span>−$30.00</span></div><div class="cart-total"><b>Total</b><b class="bad">$42.00</b></div></div></div></div>';
+function showPlanDetail(todo, number) {
+  $("step-heading").textContent = "Why, step " + number;
+  $("step-detail").replaceChildren(node("p", todo.reason || todo.content));
+  if (todo.source) $("step-detail").append(node("p", "Source: " + todo.source, "plan-source"));
+}
+function renderPlan(todos, selectedStep = null, onSelect = () => {}) {
+  const focusedIndex = [...$("plan").children].indexOf(document.activeElement);
+  $("plan").replaceChildren();
+  $("plan-title").textContent = `Plan · ${todos.filter((todo) => todo.status === "completed").length} of ${todos.length}`;
+  todos.forEach((todo, i) => {
+    const button = node("button", undefined, "plan-item");
+    button.dataset.status = todo.status;
+    button.dataset.briefStep = i + 1;
+    button.type = "button";
+    if (todo.status === "in_progress") button.setAttribute("aria-current", "step");
+    const marker = node("span", String(i + 1), "mono plan-marker");
+    if (todo.status === "completed") {
+      marker.innerHTML = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="m3 8 3 3 7-8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      marker.setAttribute("aria-label", "Completed");
+    }
+    const current = todo.current ?? todo.status === "in_progress";
+    const timing = current ? "now" : Number.isFinite(todo.duration) ? `${(todo.duration / 1000).toFixed(1)}s` : "";
+    button.append(
+      marker,
+      node("span", todo.content, "plan-copy"),
+      node("span", timing, "mono plan-time"),
+    );
+    button.onclick = () => {
+      for (const b of $("plan").children) b.classList.remove("selected");
+      button.classList.add("selected");
+      showPlanDetail(todo, i + 1);
+      onSelect(i + 1);
+    };
+    if (selectedStep === i + 1) {
+      button.classList.add("selected");
+      showPlanDetail(todo, i + 1);
+    }
+    $("plan").append(button);
+  });
+  if (focusedIndex >= 0) $("plan").children[focusedIndex]?.focus({ preventScroll: true });
+}
+function renderReportBrief(run) {
+  const brief = run.repro_brief;
+  if (brief) {
+    $("report-brief").hidden = false;
+    $("report-assertion").hidden = false;
+    $("unknown-count").textContent = `${brief.unknowns.length} unknown${brief.unknowns.length === 1 ? "" : "s"}`;
+    for (const step of brief.steps) {
+      const item = node("li");
+      item.append(node("p", step.instruction), node("small", step.source));
+      $("report-steps").append(item);
+    }
+    $("assertion-check").textContent = brief.assertion.check;
+    $("assertion-look-in").textContent = { page: "Page", network: "Network", console: "Console" }[brief.assertion.look_in];
+    $("report-expected").textContent = brief.assertion.expected;
+    $("report-actual").textContent = brief.assertion.reported_actual;
+    for (const unknown of brief.unknowns) $("report-unknowns").append(node("li", unknown));
+    if (!brief.unknowns.length) $("report-unknowns").replaceWith(node("p", "No unknowns were identified in the submitted evidence.", "muted"));
+  }
+  if (run.evidence_frames?.length) {
+    $("key-frames-section").hidden = false;
+    run.evidence_frames.forEach((frame, i) => {
+      const figure = node("figure");
+      const link = node("a");
+      link.href = `/api/runs/${run.id}/evidence/${i + 1}.jpg`;
+      link.target = "_blank";
+      link.rel = "noopener";
+      const img = node("img");
+      img.src = link.href;
+      img.loading = "lazy";
+      img.alt = `Submitted evidence: ${frame.label}`;
+      link.append(img);
+      figure.append(link, node("figcaption", frame.label));
+      $("key-frames").append(figure);
+    });
+  }
+}
+function renderVerdict(verdict, brief) {
+  if (page === "report") {
+    renderChecks(verdict, brief);
+    return;
+  }
+  const host = $("verdict");
+  host.hidden = !verdict;
+  host.replaceChildren();
+  if (!verdict) return;
+  host.append(node("h2", verdictLabels[verdict.verdict]), node("p", verdict.reason));
+  const details = node("dl", undefined, "verdict-values");
+  if (verdict.expected) {
+    const expected = node("div");
+    expected.append(node("dt", "Expected"), node("dd", verdict.expected));
+    details.append(expected);
+  }
+  if (verdict.observed) {
+    const style = verdict.verdict === "reproduced" ? "bad" : "";
+    const quotes = node("dd", undefined, style);
+    for (const quote of verdict.observed.split("; ")) quotes.append(node("div", quote, "observed-quote"));
+    const observed = node("div");
+    observed.append(node("dt", "Observed"), quotes);
+    details.append(observed);
+  }
+  if (details.childElementCount) host.append(details);
+  if (verdict.verdict !== "not_reproduced") {
+    const step = brief?.steps[verdict.step_number - 1];
+    if (step) {
+      const reference = node("dl");
+      reference.append(node("dt", "Step " + verdict.step_number), node("dd", step.instruction));
+      host.append(reference);
+    }
+  }
+}
+function renderRecordings(run) {
+  mountRecordings(run, api).catch(error => { $("recording-error").textContent = error.message; });
+}
+const inputActions = new Set(["type", "fill", "select"]);
+function actionText(payload) {
+  const value = payload.value ? " " + JSON.stringify(payload.value) : "";
+  const preposition = inputActions.has(payload.action) ? " into " : " · ";
+  return (payload.action || "Action") + value + (payload.target ? preposition + payload.target : "");
+}
+function renderActionLog(host, events, brief) {
+  const actions = [];
+  let pending = null;
+  for (const event of events) {
+    if (!event.event_type.startsWith("browser.action.")) continue;
+    const payload = event.payload;
+    if (event.event_type === "browser.action.started") {
+      pending = { payload, outcome: "Started" };
+      actions.push(pending);
+    } else {
+      if (!pending || pending.payload.action !== payload.action || pending.payload.target !== payload.target ||
+          pending.payload.brief_step && payload.brief_step && pending.payload.brief_step !== payload.brief_step) {
+        pending = {};
+        actions.push(pending);
+      }
+      pending.payload = payload;
+      pending.outcome = event.event_type === "browser.action.failed" ? "Failed" : "Completed";
+      pending = null;
+    }
+  }
+  host.replaceChildren();
+  let previousFields = [];
+  const groups = new Map();
+  for (const { payload, outcome } of actions) {
+    const step = Number.isInteger(payload.brief_step) && payload.brief_step > 0 ? payload.brief_step : null;
+    if (!groups.has(step)) {
+      const group = node("section", undefined, "action-group");
+      group.dataset.briefStep = step || "unassigned";
+      const instruction = brief?.steps[step - 1]?.instruction;
+      const title = step ? `Step ${step}${instruction ? " · " + instruction : ""}` : "Browser actions";
+      group.append(node("h3", title, "action-group-title"));
+      groups.set(step, group);
+      host.append(group);
+    }
+    const row = node("article", undefined, "action-row");
+    if (step) row.append(node("p", "Step " + step, "muted"));
+    row.append(node("p", actionText(payload), "action-title"));
+    if (payload.reason) row.append(node("p", payload.reason, "muted"));
+    row.append(node("p", outcome, "action-outcome"));
+    if (payload.error) row.append(node("p", payload.error, "action-error"));
+    if (inputActions.has(payload.action)) {
+      const after = outcome === "Completed" && Array.isArray(payload.fields) ? payload.fields : null;
+      const comparison = node("div", undefined, "field-comparison");
+      for (const [label, lines, other] of [["Before", previousFields, after], ["After", after, previousFields]]) {
+        const column = node("div", undefined, "field-snapshot");
+        column.append(node("h3", label));
+        if (lines === null) column.append(node("p", "No snapshot captured", "muted"));
+        else if (!lines.length) column.append(node("p", "No field values captured", "muted"));
+        else for (const line of lines) {
+          const changed = other !== null && !other.includes(line);
+          const field = node("div", line, "mono" + (changed ? " field-changed" : ""));
+          if (changed) field.append(node("small", " Changed", "change-label"));
+          column.append(field);
+        }
+        comparison.append(column);
+      }
+      row.append(comparison);
+      if (outcome === "Completed") previousFields = after || [];
+    }
+    groups.get(step).append(row);
+  }
+  if (!actions.length) host.append(node("p", "No browser actions were recorded.", "muted"));
+}
+function eventDescription(event) {
+  if (event.event_type === "sandbox.request_blocked") {
+    const step = event.payload.brief_step;
+    return { title: `Blocked by sandbox: ${event.payload.host || "off-target host"}`, detail: step ? `Step ${step}` : "" };
+  }
+  const p = event.payload || {};
+  if (
+    event.event_type === "agent.message.delta" ||
+    event.event_type === "task.todos"
+  )
+    return null;
+  const labels = {
+    "browser.action.started": "Acting",
+    "browser.action.completed": "Action completed",
+    "browser.action.failed": "Action failed",
+    "browser.navigation.started": "Opening page",
+    "browser.navigation.completed": "Page loaded",
+    "browser.observation": "Observed page",
+    "browser.frame.changed": "Frame changed",
+    "run.created": "Run created",
+    "sandbox.starting": "Starting sandbox",
+    "sandbox.started": "Sandbox ready",
+    "sandbox.destroyed": "Sandbox destroyed",
+    "sandbox.cleanup_failed": "Sandbox cleanup needs attention",
+    "evidence.ready": "Evidence plan ready",
+    "reproduction.verdict": "Verdict reported",
+    "browser.click": "Clicked",
+    "reproduction.finding": "Finding located",
+    "evidence.failed": "Couldn't read the evidence",
+    "run.completed": "Run output saved",
+    "run.failed": "Run failed",
+    "run.cancelled": "Run stopped",
+    "run.status": "Status",
+    "input.required": "Input needed",
+    "input.received": "Input received",
+    "sensitive_input.required": "Verification needed",
+    "sensitive_input.received": "Code submitted",
+    "sensitive_input.cancelled": "Code request ended",
+    "browser.capture.failed": "Frame capture interrupted",
+    "browser.capture.recovered": "Frame capture recovered",
+  };
+  if (event.event_type.startsWith("browser.action.")) {
+    return { title: labels[event.event_type], detail: actionText(p) };
+  }
+  if (event.event_type === "browser.click") {
+    return { title: "Click recorded", detail: p.brief_step ? `Step ${p.brief_step}` : "Agent click" };
+  }
+  return {
+    title: labels[event.event_type] || event.event_type.replaceAll(".", " "),
+    detail:
+      verdictLabels[p.verdict] ||
+      p.question ||
+      p.explanation ||
+      p.target ||
+      p.url ||
+      p.message ||
+      p.error ||
+      p.status ||
+      p.frame_id ||
+      "",
+  };
+}
+function appendEvent(host, event) {
+  const d = eventDescription(event);
+  if (!d) return;
+  const row = node("div", undefined, "event-row");
+  const date = new Date(event.created_at);
+  row.append(
+    node(
+      "time",
+      date.toLocaleTimeString(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }),
+      "muted",
+    ),
+  );
+  const copy = node("div");
+  copy.append(node("p", d.title), node("p", d.detail, "muted"));
+  if (event.event_type.startsWith("browser.action.")) {
+    if (event.payload.reason) copy.append(node("p", event.payload.reason, "action-reason muted"));
+    if (event.payload.error) copy.append(node("p", event.payload.error, "action-error"));
+  }
+  row.append(copy);
+  host.append(row);
+  return d;
+}
+if (page === "live") {
+  const seenSandboxEvents = [];
+  let runId = location.pathname.split("/").pop(),
+    source = null,
+    stopped = false,
+    frameTimer = null,
+    frameUrl = null,
+    latestRequest = null,
+    brief = null,
+    evidenceFailed = false,
+    currentBriefStep = 0,
+    selectedBriefStep = null,
+    latestFieldsSequence = 0,
+    started = Date.now(),
+    limitSeconds = 600,
+    captureNextFrame = true;
+  const capturedFrames = [];
+  const seen = new Set();
+  const stepActions = new Map();
+  function updateProgress() {
+    const items = [...$("plan").children].filter(item => item.classList.contains("plan-item"));
+    $("run-progress").value = items.length ? items.filter(item => item.dataset.status === "completed").length / items.length * 100 : 0;
+  }
+  function renderBriefPlan() {
+    if (!brief) return;
+    const todos = [];
+    for (const [index, step] of brief.steps.entries()) {
+      const number = index + 1;
+      const action = stepActions.get(number);
+      const duration = action?.startedAt != null && action?.finishedAt != null
+        ? Math.max(0, action.finishedAt - action.startedAt) : null;
+      todos.push({
+        content: step.instruction, source: step.source, reason: action?.reason,
+        status: number < currentBriefStep ? "completed" : number === currentBriefStep ? "in_progress" : "pending",
+        duration, current: number === currentBriefStep && !stopped,
+      });
+    }
+    renderPlan(todos, selectedBriefStep || currentBriefStep, (step) => { selectedBriefStep = step; });
+    updateProgress();
+  }
+  function recordPlanAction(event) {
+    const step = event.payload.brief_step;
+    if (!Number.isInteger(step) || step < 1) return;
+    currentBriefStep = Math.max(currentBriefStep, step);
+    const action = stepActions.get(step) || { startedAt: null, finishedAt: null, sequence: 0, reason: "" };
+    const timestamp = Date.parse(event.created_at);
+    if (Number.isFinite(timestamp)) {
+      if (event.event_type === "browser.action.started") {
+        action.startedAt = action.startedAt === null ? timestamp : Math.min(action.startedAt, timestamp);
+      } else action.finishedAt = action.finishedAt === null ? timestamp : Math.max(action.finishedAt, timestamp);
+    }
+    if (event.sequence >= action.sequence) {
+      action.sequence = event.sequence;
+      action.reason = event.payload.reason || action.reason;
+    }
+    stepActions.set(step, action);
+    renderBriefPlan();
+  }
+  function setStatus(status) {
+    $("run-status").textContent = labels[status] || status;
+    $("run-dot").className = "dot " + status;
+    $("run-progress").hidden = terminal.has(status);
+    document.body.classList.toggle("stream-active", !terminal.has(status));
+    if (status === "reading_evidence") {
+      $("feed-label").textContent = "READING EVIDENCE";
+      $("screen-waiting").textContent = "Reading your evidence before starting the browser. This usually takes a few seconds, up to 30 seconds.";
+      $("latest-action").textContent = "Building a plan from your evidence";
+    } else if (status === "running") {
+      $("feed-label").textContent = "LIVE";
+      $("screen-waiting").textContent = "The browser is starting. The first frame will appear here.";
+    }
+    if (terminal.has(status)) {
+      stopped = true;
+      clearTimeout(frameTimer);
+      source?.close();
+      $("cancel-run").hidden = true;
+      $("input-panel").hidden = true;
+      $("view-report").hidden = false;
+      $("view-report").href = "/app/reports/" + runId;
+      $("feed-label").textContent = "FINAL FRAME";
+      if (evidenceFailed) {
+        $("feed-label").textContent = "EVIDENCE ERROR";
+        $("screen-waiting").textContent = "The evidence could not be read. Check your files and steps, then start a new reproduction.";
+        $("latest-action").textContent = "The browser did not start";
+        $("plan").replaceChildren(node("p", "No plan was created because the evidence could not be read.", "muted"));
+        document.querySelector(".step-detail").hidden = true;
+        if (!source) $("activity").replaceChildren(node("p", "No browser actions were run.", "muted"));
+      }
+      refreshFrame();
+    }
+    if (!evidenceFailed) renderBriefPlan();
+  }
+  async function refreshFrame() {
+    if (preview) return;
+    try {
+      const response = await fetch(`/api/runs/${runId}/screen.jpg`, {
+        cache: "no-store",
+      });
+      if (response.status === 401) {
+        location.href = "/login";
+        return;
+      }
+      if (response.ok && response.status !== 204) {
+        const blob = await response.blob();
+        const next = URL.createObjectURL(blob);
+        if (captureNextFrame) {
+          captureNextFrame = false;
+          const url = URL.createObjectURL(blob);
+          capturedFrames.push(url);
+          const thumb = node("img");
+          thumb.src = url;
+          thumb.alt = $("latest-action").textContent;
+          $("frame-strip").append(thumb);
+          $("frame-strip").hidden = false;
+          while (capturedFrames.length > 8) {
+            URL.revokeObjectURL(capturedFrames.shift());
+            $("frame-strip").firstElementChild.remove();
+          }
+          $("frame-strip").scrollLeft = $("frame-strip").scrollWidth;
+        }
+        $("browser-screen").src = next;
+        $("browser-screen").hidden = false;
+        $("screen-waiting").hidden = true;
+        if (frameUrl) URL.revokeObjectURL(frameUrl);
+        frameUrl = next;
+      }
+    } catch {
+      $("latest-action").textContent = "Browser feed reconnecting…";
+    } finally {
+      if (!stopped) frameTimer = setTimeout(refreshFrame, 750);
+    }
+  }
+  function receive(event) {
+    if (seen.has(event.sequence)) return;
+    seen.add(event.sequence);
+    if (event.event_type.startsWith("sandbox.")) {
+      seenSandboxEvents.push(event);
+      renderSandbox(seenSandboxEvents);
+    }
+    if (event.event_type === "task.todos") {
+      if (!brief) renderPlan(event.payload.todos || []);
+      updateProgress();
+      return;
+    }
+    if (event.event_type === "evidence.ready") {
+      brief = event.payload.brief;
+      renderBriefPlan();
+    }
+    if (event.event_type.startsWith("browser.action.")) recordPlanAction(event);
+    if (event.event_type === "browser.action.completed") captureNextFrame = true;
+    if (event.event_type === "browser.action.completed" && inputActions.has(event.payload.action) &&
+        Array.isArray(event.payload.fields) && event.sequence > latestFieldsSequence) {
+      latestFieldsSequence = event.sequence;
+      $("form-state-section").hidden = !event.payload.fields.length;
+      $("form-state").replaceChildren(...event.payload.fields.map(line => node("div", line)));
+    }
+    if (event.event_type === "evidence.failed") evidenceFailed = true;
+    if (event.event_type === "reproduction.verdict") renderVerdict(event.payload, brief);
+    if (event.event_type === "run.failed" || event.event_type === "evidence.failed")
+      $("run-message").textContent = event.payload.error;
+    if (event.event_type === "agent.message.delta") {
+      const host = $("agent-output");
+      host.textContent = (host.textContent + (event.payload.text || "")).slice(
+        -12000,
+      );
+      return;
+    }
+    const activity = $("activity");
+    if (!activity.querySelector(".event-row")) activity.replaceChildren();
+    const d = appendEvent(activity, event);
+    if (d) {
+      if (event.event_type.startsWith("browser.action.")) {
+        $("latest-action").replaceChildren(
+          node("span", event.payload.action || "Action", "action-kind"),
+          node("span", actionText(event.payload).slice((event.payload.action || "Action").length) +
+            (event.payload.brief_step ? " · step " + event.payload.brief_step : "") +
+            " · " + new Date(event.created_at).toLocaleTimeString()),
+        );
+      } else $("latest-action").textContent = d.title + (d.detail ? " · " + d.detail : "");
+    }
+    while (activity.children.length > 150) activity.firstElementChild.remove();
+    activity.scrollTop = activity.scrollHeight;
+    if (event.event_type === "run.status") {
+      if (terminal.has(event.payload.status)) renderVerdict(event.payload.verdict, brief);
+      setStatus(event.payload.status);
+    }
+    if (event.event_type === "browser.navigation.completed")
+      $("browser-url").textContent = event.payload.url;
+    if (
+      event.event_type === "input.required" ||
+      event.event_type === "sensitive_input.required"
+    ) {
+      latestRequest =
+        event.event_type === "sensitive_input.required"
+          ? event.payload.request_id
+          : null;
+      $("input-question").textContent =
+        event.payload.question || event.payload.prompt;
+      $("input-answer").value = "";
+      $("input-answer").style.webkitTextSecurity = latestRequest
+        ? "disc"
+        : "none";
+      $("input-panel").hidden = false;
+      $("decline-input").hidden = !latestRequest;
+    }
+    if (
+      [
+        "input.received",
+        "sensitive_input.received",
+        "sensitive_input.cancelled",
+      ].includes(event.event_type)
+    ) {
+      $("input-panel").hidden = true;
+      $("input-answer").value = "";
+    }
+  }
+  const clock = setInterval(() => {
+    const seconds = Math.max(0, Math.floor((Date.now() - started) / 1000));
+    if (!stopped)
+      $("elapsed").textContent =
+        `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")} / ${String(Math.floor(limitSeconds / 60)).padStart(2, "0")}:${String(limitSeconds % 60).padStart(2, "0")}`;
+  }, 1000);
+  $("cancel-run").onclick = async () => {
+    if (preview) {
+      $("run-status").textContent = "Stopped · preview";
+      $("cancel-run").disabled = true;
+      $("view-report").hidden = false;
+      $("view-report").href = "/preview/report";
+      stopped = true;
+      return;
+    }
+    $("cancel-run").disabled = true;
+    try {
+      await api(`/api/runs/${runId}/cancel`, { method: "POST" });
+      setStatus("cancelled");
+    } catch (error) {
+      $("run-message").textContent = error.message;
+      $("cancel-run").disabled = false;
+    }
+  };
+  $("input-form").onsubmit = async (event) => {
+    event.preventDefault();
+    const body = latestRequest
+      ? { request_id: latestRequest, code: $("input-answer").value }
+      : { answer: $("input-answer").value };
+    try {
+      await api(
+        `/api/runs/${runId}/${latestRequest ? "sensitive-input" : "input"}`,
+        { method: "POST", body: JSON.stringify(body) },
+      );
+      $("input-answer").value = "";
+      $("input-panel").hidden = true;
+    } catch (error) {
+      $("run-message").textContent = error.message;
+    }
+  };
+  $("decline-input").onclick = async () => {
+    try {
+      await api(`/api/runs/${runId}/sensitive-input/decline`, {
+        method: "POST",
+      });
+      $("input-panel").hidden = true;
+    } catch (error) {
+      $("run-message").textContent = error.message;
+    }
+  };
+  if (preview) {
+    runId = "RUN-0142";
+    $("run-id").textContent = runId;
+    $("run-title").textContent = sample.title;
+    $("run-status").textContent = "Running · sample";
+    $("browser-url").textContent = "staging.northwind.test/cart";
+    $("elapsed").textContent = "01:42 / 10:00";
+    started = Date.now() - 102000;
+    $("viewport").innerHTML = cartMarkup;
+    renderPlan(
+      samplePlan.map((content, i) => ({
+        content,
+        status: i < 5 ? "completed" : i === 5 ? "in_progress" : "pending",
+      })),
+    );
+    $("activity").replaceChildren();
+    for (const [i, detail] of [
+      "Cart loaded",
+      "Applied coupon SAVE50",
+      "Located Remove Insulated Bottle",
+      "Clicking Remove and waiting for the page",
+    ].entries())
+      appendEvent($("activity"), {
+        event_type: "browser.observation",
+        payload: { message: detail },
+        created_at: new Date(Date.now() - (4 - i) * 3000).toISOString(),
+      });
+    $("latest-action").textContent = "click · Remove Insulated Bottle";
+  } else {
+    try {
+      const response = await api("/api/runs/" + runId);
+      const data = taskData(response.run.task);
+      brief = response.run.repro_brief;
+      renderVerdict(response.run.verdict, brief);
+      if (brief) renderBriefPlan();
+      evidenceFailed = response.run.error?.startsWith("Couldn't read the evidence") || false;
+      $("run-message").textContent = response.run.error || "";
+      $("run-id").textContent = shortId(runId);
+      $("run-title").textContent = data.title;
+      $("browser-url").textContent = data.url || "Browser";
+      started = Date.parse(response.run.created_at);
+      limitSeconds = response.run.max_runtime_seconds || 600;
+      setStatus(response.run.status);
+      if (stopped) $("elapsed").textContent = durationText(response.run);
+      updateProgress();
+      refreshFrame();
+      for (const event of await api(`/api/runs/${runId}/events`)) receive(event);
+      if (!stopped) {
+        source = new EventSource(response.stream_url);
+        const types = [
+          "sandbox.starting", "sandbox.started", "sandbox.destroyed", "sandbox.cleanup_failed", "sandbox.request_blocked",
+          "run.created",
+          "evidence.ready",
+          "reproduction.verdict",
+          "reproduction.finding",
+          "browser.click",
+          "evidence.failed",
+          "run.status",
+          "task.todos",
+          "browser.frame.changed",
+          "browser.tab.changed",
+          "browser.navigation.started",
+          "browser.navigation.completed",
+          "browser.action.started",
+          "browser.action.completed",
+          "browser.action.failed",
+          "browser.observation",
+          "browser.capture.failed",
+          "browser.capture.recovered",
+          "agent.message.delta",
+          "input.required",
+          "input.received",
+          "sensitive_input.required",
+          "sensitive_input.received",
+          "sensitive_input.cancelled",
+          "run.completed",
+          "run.failed",
+          "run.cancelled",
+        ];
+        for (const type of types)
+          source.addEventListener(type, (e) => {
+            try {
+              receive(JSON.parse(e.data));
+            } catch {
+              $("run-message").textContent =
+                "An update could not be read. Refresh to reconnect.";
+            }
+          });
+        source.onerror = () => {
+          if (!stopped) $("run-status").textContent = "Reconnecting…";
+        };
+      }
+    } catch (error) {
+      $("run-message").textContent = error.message;
+      stopped = true;
+    }
+  }
+  window.addEventListener("pagehide", () => {
+    source?.close();
+    stopped = true;
+    clearInterval(clock);
+    clearTimeout(frameTimer);
+    if (frameUrl) URL.revokeObjectURL(frameUrl);
+    capturedFrames.forEach(URL.revokeObjectURL);
+  });
+}
+if (page === "report") {
+  const runId = location.pathname.split("/").pop();
+  let record = null;
+  const events = [];
+  const seen = new Set();
+  function jsonDownload() {
+    const blob = new Blob([JSON.stringify({ run: record, events }, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    $("download-json").href = url;
+    $("download-json").download = "reprobe-" + runId + ".json";
+    $("download-json").hidden = false;
+    window.addEventListener("pagehide", () => URL.revokeObjectURL(url), {
+      once: true,
+    });
+  }
+  if (preview) {
+    $("run-status").textContent = "Reproduced · sample evidence";
+    $("run-id").textContent = "RUN-0142";
+    $("report-title").textContent = "The total stayed behind.";
+    $("report-description").textContent =
+      "Illustrative report: removing the discounted item leaves the page showing $42.00 instead of $30.00.";
+    $("evidence").innerHTML = cartMarkup;
+    $("report-output").textContent =
+      "Sample result: the discount updated, but the displayed total remained stale. This is fictional preview data, not an executed run.";
+    $("report-expected").textContent = sample.expected;
+    $("report-actual").textContent = sample.actual;
+    renderVerdict({
+      verdict: "reproduced", expected: "$30.00", observed: "$42.00",
+      reason: "The displayed total stayed at $42.00 after removing the bottle.",
+    }, null);
+    $("rerun").href = "/preview/new";
+    $("run-dot").className = "dot reproduced";
+    $("report-result").dataset.result = "reproduced";
+    $("action-log").replaceChildren(node("p", "No executed browser actions in this preview.", "muted"));
+    setupProof({ recordings: [] }, true);
+    samplePlan.forEach((title, i) =>
+      appendEvent($("report-events"), {
+        event_type: "browser.observation",
+        payload: { message: title },
+        created_at: new Date(Date.now() - (8 - i) * 5000).toISOString(),
+      }),
+    );
+  } else {
+    try {
+      const result = await api("/api/runs/" + runId);
+      record = result.run;
+      const data = taskData(record.task);
+      $("run-id").textContent = "Run " + shortId(runId);
+      renderReportHeader(record, durationText(record));
+      $("report-title").textContent = data.title;
+      $("report-description").hidden = !record.verdict?.reason && terminal.has(record.status);
+      $("report-description").textContent = record.verdict?.reason || "Open the live viewer to follow this run.";
+      renderVerdict(record.verdict, record.repro_brief);
+      renderRecordings(record);
+      $("report-output").textContent =
+        record.final_output || record.error || "No final output was captured.";
+      $("report-expected").textContent = data.expected || "";
+      $("report-actual").textContent = data.actual || "";
+      renderReportBrief(record);
+      renderBugHistory(record, api);
+      setupEnvironmentRerun(record, api);
+      const rerun = $("rerun");
+      if (terminal.has(record.status)) {
+        rerun.onclick = async (event) => {
+          event.preventDefault();
+          rerun.style.pointerEvents = "none";
+          try {
+            const next = await api(`/api/runs/${runId}/rerun`, {
+              method: "POST",
+            });
+            location.href = "/app/runs/" + next.run.id;
+          } catch (error) {
+            $("report-message").textContent = error.message;
+            rerun.style.pointerEvents = "";
+          }
+        };
+      } else {
+        rerun.textContent = "Open live viewer";
+        rerun.href = "/app/runs/" + runId;
+      }
+      let hasFrame = false;
+      try {
+        const screen = await fetch(result.screen_url, { cache: "no-store" });
+        if (screen.ok && screen.status !== 204) {
+          const url = URL.createObjectURL(await screen.blob());
+          const img = node("img", undefined, "report-image");
+          img.src = url;
+          img.alt = "Saved final browser frame";
+          $("evidence").replaceChildren(img);
+          $("download-frame").href = url;
+          $("download-frame").download = runId + ".jpg";
+          $("download-frame").hidden = false;
+          hasFrame = true;
+          window.addEventListener("pagehide", () => URL.revokeObjectURL(url), { once: true });
+        }
+      } catch {
+        $("report-message").textContent = "The final frame could not be loaded. Reload to try again.";
+      }
+      if (!hasFrame) {
+        $("evidence").replaceChildren(
+          node("p", "No browser frame was saved for this run.", "empty"),
+        );
+      }
+      const hasFinding = await renderFindingProof(record, api);
+      setupProof(record, hasFrame || hasFinding, hasFinding);
+      for (const event of await api(`/api/runs/${runId}/events`)) {
+        if (!seen.has(event.sequence)) {
+          seen.add(event.sequence);
+          events.push(event);
+          if (!event.event_type.startsWith("browser.action.")) appendEvent($("report-events"), event);
+        }
+      }
+      renderActionLog($("action-log"), events, record.repro_brief);
+      renderSandbox(events);
+      arrangeReportSteps(record, events);
+      $("run-events-section").hidden = !$("report-events").childElementCount;
+      $("event-count").textContent = `${events.length} event${events.length === 1 ? "" : "s"}`;
+      $("report-output-section").hidden = !record.final_output && !record.error;
+      for (const id of ["report-expected", "report-actual"]) $(id).closest(".field").hidden = !$(id).textContent;
+      $("comparison-section").hidden = !$("report-expected").textContent && !$("report-actual").textContent && !record.repro_brief;
+      jsonDownload();
+    } catch (error) {
+      $("report-message").textContent = error.message;
+    }
+  }
+}

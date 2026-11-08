@@ -1,0 +1,7 @@
+[Unit]
+Description=Destroy Reprobe sandboxes past their age limit
+After=reprobe-sandbox-setup.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/sandboxctl reap

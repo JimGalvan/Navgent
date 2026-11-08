@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#0c0c0d" />
+    <title>Your reports · Reprobe</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script type="module" src="/static/ui.js"></script>
+  </head>
+  <body data-page="reports">
+    <header class="top" data-app-header></header>
+    <div id="preview-banner" class="preview-banner" hidden>
+      <span>Design preview · sample data, no agent execution</span
+      ><a href="/preview/new">New</a><a href="/preview/live">Live</a
+      ><a href="/preview/report">Report</a>
+    </div>
+    <main class="reports-workspace">
+      <header class="reports-heading">
+        <div><h1>Reports</h1><p id="reports-count" class="mono muted" role="status">Loading your bugs…</p></div>
+        <a class="button" href="/app">Test a bug</a>
+      </header>
+      <p id="history-message" class="message" role="status"></p>
+      <section aria-labelledby="latest-heading">
+        <div class="reports-list-heading">
+          <h2 id="latest-heading" class="section-title">Latest result</h2>
+          <div id="report-filters" class="report-tabs" role="group" aria-label="Filter by latest result">
+            <button type="button" data-filter="all" aria-pressed="true">All</button>
+            <button type="button" data-filter="reproduced" aria-pressed="false">Reproduced</button>
+            <button type="button" data-filter="not_reproduced" aria-pressed="false">Not reproduced</button>
+          </div>
+        </div>
+        <div id="history"><p class="empty">Loading your runs…</p></div>
+      </section>
+    </main>
+  </body>
+</html>

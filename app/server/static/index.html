@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#0c0c0d" />
+    <title>Show the bug. Get the proof. · Reprobe</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script type="module" src="/static/ui.js"></script>
+  </head>
+  <body data-page="index">
+    <header class="top">
+      <a class="brand" href="/">Reprobe</a>
+      <nav aria-label="Primary">
+        <a href="/login">Log in</a
+        ><a class="button" href="/register">Create account</a>
+      </nav>
+    </header>
+    <div id="preview-banner" class="preview-banner" hidden>
+      <span>Design preview · sample data, no agent execution</span
+      ><a href="/preview/new">New</a><a href="/preview/live">Live</a
+      ><a href="/preview/report">Report</a>
+    </div>
+    <main>
+      <section class="hero">
+        <div>
+          <h1>Show the bug.<br />Get the proof.</h1>
+          <p class="intro muted">
+            Turn a bug report into a browser run you can watch, inspect, and
+            share with your team.
+          </p>
+          <p class="muted">
+            Give Navgent the steps and a URL. Follow every action, then return
+            to the result.
+          </p>
+          <div class="actions">
+            <a class="button" href="/register"
+              >Create your account <span aria-hidden="true">↗</span></a
+            ><a class="quiet" href="/preview/report">Explore a sample report</a>
+          </div>
+          <p class="mono muted" style="margin-top: 24px">
+            Written-step execution available · media analysis in development
+          </p>
+        </div>
+        <div class="specimen landing-evidence">
+          <div class="specimen-head">
+            <span>Cart total after removing an item</span
+            ><span>Sample report</span>
+          </div>
+          <div class="specimen-body">
+            <span class="status bad">Reproduced · illustrative example</span>
+            <h2 style="font-size: 30px; margin-top: 18px">
+              One item removed.<br />The total never changed.
+            </h2>
+            <div class="demo-cart" aria-label="Illustrative checkout page">
+              <div class="cart-head">
+                <b>northwind supply</b><span>Cart (1)</span>
+              </div>
+              <div class="cart-content">
+                <div>
+                  <h2>Your cart</h2>
+                  <div class="cart-product">
+                    <span>Trail Pack 30L<br /><small>Moss · qty 1</small></span
+                    ><b>$60.00</b>
+                  </div>
+                </div>
+                <div>
+                  <h2>Summary</h2>
+                  <div class="cart-product">
+                    <span>Subtotal</span><span>$60.00</span>
+                  </div>
+                  <div class="cart-product">
+                    <span>SAVE50</span><span>−$30.00</span>
+                  </div>
+                  <div class="cart-total">
+                    <b>Total</b><b class="bad">$42.00</b>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="assertion">
+              <div>
+                <span class="muted">Expected</span><strong>$30.00</strong>
+              </div>
+              <div>
+                <span class="muted">Observed</span
+                ><strong class="bad">$42.00</strong>
+              </div>
+            </div>
+            <p class="muted" style="font-size: 13px">
+              The screenshot, the steps, and the mismatch. Together in one
+              report.
+            </p>
+          </div>
+        </div>
+      </section>
+      <section class="workflow" aria-label="How Reprobe works">
+        <div>
+          <h2>Start with the report.</h2>
+          <p>
+            Add the app URL, the steps to follow, and what should have happened.
+            Attachments can be previewed while media analysis is being built.
+          </p>
+        </div>
+        <div>
+          <h2>Watch the attempt.</h2>
+          <p>
+            See the live browser, follow the plan, and answer when Navgent needs
+            more context. Stop the run at any time.
+          </p>
+        </div>
+        <div>
+          <h2>Keep the evidence.</h2>
+          <p>
+            Return to the run output, browser actions, and available screenshots
+            from your own report history.
+          </p>
+        </div>
+      </section>
+    </main>
+    <footer class="footer">
+      <span>Reprobe · powered by Navgent</span
+      ><a href="/login">Already have an account? Log in</a>
+    </footer>
+  </body>
+</html>

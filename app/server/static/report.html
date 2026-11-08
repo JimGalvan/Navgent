@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#0c0c0d" />
+    <title>Run report · Reprobe</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script type="module" src="/static/ui.js"></script>
+  </head>
+  <body data-page="report">
+    <header class="top" data-app-header></header>
+    <div id="preview-banner" class="preview-banner" hidden>
+      <span>Design preview · sample data, no agent execution</span
+      ><a href="/preview/new">New</a><a href="/preview/live">Live</a
+      ><a href="/preview/report">Report</a>
+    </div>
+    <main class="report-workspace">
+      <header class="report-summary">
+        <div class="report-summary-copy">
+          <div class="report-heading">
+            <h1 id="report-title">Run report</h1>
+            <div class="report-result" id="report-result"><span class="dot" id="run-dot"></span><span id="run-status">Loading result</span></div>
+          </div>
+          <p id="report-description" class="muted">Loading the saved result and available evidence.</p>
+          <p id="run-host" class="report-host muted"></p>
+        </div>
+        <div class="report-controls"><a id="rerun" class="button" href="/app">Run again</a><button id="change-url" class="text-button" type="button" aria-expanded="false" aria-controls="rerun-form" hidden>Run on another URL</button></div>
+      </header>
+      <form id="rerun-form" class="rerun-form" hidden aria-label="Run on another URL">
+        <div class="field"><label for="rerun-url">App URL</label><p id="rerun-help" class="notice">Reuse this bug’s evidence and expectations. The new run stays in this bug’s history.</p><input id="rerun-url" class="mono" type="url" required maxlength="1000" aria-describedby="rerun-help rerun-message" /></div>
+        <div class="actions"><button id="rerun-submit" class="button" type="submit">Start reproduction</button><button id="rerun-cancel" class="text-button" type="button">Cancel</button></div>
+        <p id="rerun-message" class="message" role="status"></p>
+      </form>
+      <p id="report-message" class="message" role="status"></p>
+      <div class="proof-layout">
+        <section class="proof" aria-labelledby="proof-heading">
+          <div class="proof-heading">
+            <h2 id="proof-heading" class="section-title">Proof</h2>
+            <div class="report-tabs" role="tablist" aria-label="Evidence view">
+              <button id="proof-video" type="button" role="tab" aria-selected="false" aria-controls="recording-section" tabindex="-1" disabled>Video</button>
+              <button id="proof-frame" type="button" role="tab" aria-selected="true" aria-controls="evidence-section">Final frame</button>
+            </div>
+          </div>
+          <section id="recording-section" role="tabpanel" aria-labelledby="proof-video" hidden>
+            <div class="recording-toolbar">
+              <label id="recording-tab-label" hidden>Recording <select id="recording-tab" aria-label="Recording tab"></select></label>
+              <label id="recording-marks-label" hidden><input id="recording-marks" type="checkbox" checked /> Show marks</label>
+              <button id="recording-fullscreen" class="text-button" type="button">Full screen</button>
+            </div>
+            <div id="recording-stage" class="recording-stage">
+              <video id="recording-player" controls controlslist="nofullscreen" disablepictureinpicture playsinline preload="metadata" aria-label="Browser recording, tab 1"></video>
+              <canvas id="recording-overlay" aria-hidden="true"></canvas>
+            </div>
+            <p id="recording-caption" class="notice" role="status"></p>
+            <div id="recording-findings" class="recording-findings" aria-label="Findings in this recording"></div>
+            <p id="recording-error" class="message" role="status"></p>
+          </section>
+          <section id="evidence-section" role="tabpanel" aria-labelledby="proof-frame">
+            <div id="evidence" class="proof-frame"><p class="empty">Looking for a saved browser frame…</p></div>
+            <p class="notice mono" id="evidence-caption">Final browser frame</p>
+            <div id="proof-explanation" class="proof-explanation" hidden></div>
+          </section>
+          <nav id="proof-timeline" class="proof-timeline" aria-label="Jump to a recorded step" hidden></nav>
+        </section>
+        <aside id="actions-section" aria-labelledby="steps-heading">
+          <h2 id="steps-heading" class="section-title">Steps</h2>
+          <div id="action-log"><p class="muted">Loading recorded steps…</p></div>
+        </aside>
+      </div>
+      <section id="verdict" aria-label="Reproduction checks" hidden></section>
+      <section class="report-details" aria-labelledby="details-heading">
+        <h2 id="details-heading" class="section-title">Details</h2>
+        <details id="sandbox-panel" class="sandbox-panel" hidden>
+          <summary>Sandbox · <span id="sandbox-status"></span></summary>
+          <dl id="sandbox-values" class="detail-body run-metadata"></dl>
+        </details>
+        <details id="run-information">
+          <summary>Run details</summary>
+          <dl class="detail-body run-metadata">
+            <dt>Recorded</dt><dd><time id="run-date"></time></dd>
+            <dt>Duration</dt><dd id="run-duration" class="mono"></dd>
+            <dt>Run ID</dt><dd id="run-id" class="mono"></dd>
+          </dl>
+        </details>
+        <details id="bug-history-panel" class="bug-history-panel" hidden>
+          <summary id="bug-history-summary">Run history</summary>
+          <nav id="bug-history" class="bug-history" aria-label="Runs of this bug"></nav>
+        </details>
+        <details id="report-brief" hidden>
+          <summary>How the agent read your input <span id="unknown-count" class="muted"></span></summary>
+          <div class="detail-body">
+            <div class="two-col"><div><h3 class="detail-title">Evidence plan</h3><ol id="report-steps" class="evidence-steps"></ol></div><div><h3 class="detail-title">Unknowns in the evidence</h3><ul id="report-unknowns"></ul></div></div>
+          </div>
+        </details>
+        <details id="comparison-section">
+          <summary>Submitted expectations</summary>
+          <div class="detail-body">
+            <div class="two-col comparison-values">
+              <div class="field"><span class="muted">Expected</span><p class="mono" id="report-expected"></p></div>
+              <div class="field"><span class="muted">User-reported actual</span><p class="mono" id="report-actual"></p></div>
+            </div>
+            <section id="report-assertion" hidden>
+              <h3 class="detail-title">Planned assertion</h3>
+              <div class="field"><span class="muted">Check</span><p id="assertion-check"></p></div>
+              <div class="field"><span class="muted">Look in</span><p id="assertion-look-in"></p></div>
+            </section>
+          </div>
+        </details>
+        <details id="key-frames-section" hidden>
+          <summary>Submitted evidence · key frames</summary>
+          <div class="detail-body"><p class="notice">Frames read from your uploads before execution. These show the reported bug, not observations from this run.</p><div id="key-frames" class="key-frames"></div></div>
+        </details>
+        <details id="run-events-section">
+          <summary>Agent log <span id="event-count" class="mono muted"></span></summary>
+          <div id="report-events" class="detail-body mono"></div>
+        </details>
+        <details id="report-output-section"><summary>Run output</summary><div id="report-output" class="detail-body output"></div></details>
+        <details id="download-section" open>
+          <summary>Files</summary>
+          <div class="detail-body download-links"><div id="recording-downloads"></div><a id="download-proof" class="download" hidden>Annotated finding frame (JPEG)</a><a id="download-frame" class="download" hidden>Browser screenshot (JPEG)</a><a id="download-json" class="download" hidden>Run record (JSON)</a></div>
+        </details>
+      </section>
+    </main>
+  </body>
+</html>
