@@ -10,16 +10,7 @@
     <script type="module" src="/static/ui.js"></script>
   </head>
   <body data-page="new">
-    <header class="top">
-      <a class="brand" href="/">Reprobe</a>
-      <nav aria-label="Primary">
-        <a data-nav="new" href="/app">New</a
-        ><a data-nav="live" href="/app">Live</a
-        ><a data-nav="reports" href="/app/reports">Reports</a
-        ><span id="account-email" class="account-name muted"></span
-        ><a id="logout" href="/logout">Log out</a>
-      </nav>
-    </header>
+    <header class="top" data-app-header></header>
     <div id="preview-banner" class="preview-banner" hidden>
       <span>Design preview · sample data, no agent execution</span
       ><a href="/preview/new">New</a><a href="/preview/live">Live</a
@@ -27,150 +18,54 @@
     </div>
     <main class="narrow">
       <div class="intro">
-        <h1>Show the bug.<br />Get the proof.</h1>
-        <p class="muted">
-          Add written steps, screenshots or a recording. Navgent reads the
-          evidence, follows the plan in a live browser and saves the result.
-        </p>
+        <h1>Show the bug. Get the proof.</h1>
+        <p class="muted">Add steps, screenshots or a recording to reproduce the bug.</p>
       </div>
       <form id="reproduction-form">
         <section class="section">
-          <div class="split-line">
-            <h2 class="section-title">Evidence</h2>
-            <div class="tabs" role="tablist" aria-label="Evidence type">
-              <button
-                class="tab"
-                id="tab-video"
-                type="button"
-                role="tab"
-                aria-selected="false"
-                aria-controls="panel-video"
-                data-tab="video"
-              >
-                Video</button
-              ><button
-                class="tab"
-                id="tab-shots"
-                type="button"
-                role="tab"
-                aria-selected="false"
-                aria-controls="panel-shots"
-                data-tab="shots"
-                tabindex="-1"
-              >
-                Screenshots</button
-              ><button
-                class="tab"
-                id="tab-steps"
-                type="button"
-                role="tab"
-                aria-selected="true"
-                aria-controls="panel-steps"
-                data-tab="steps"
-              >
-                Steps
-              </button>
-            </div>
+          <h2 class="section-title">Evidence</h2>
+          <div class="field">
+            <label for="steps">Steps <span class="optional">Optional</span></label>
+            <textarea id="steps" rows="4" maxlength="6000" placeholder="1. Open the cart page&#10;2. Apply the discount&#10;3. Remove one item&#10;4. Check the total"></textarea>
           </div>
-          <div
-            id="panel-video"
-            role="tabpanel"
-            aria-labelledby="tab-video"
-            hidden
-          >
-            <div class="drop" data-drop="video">
-              <p>Show us where it went wrong.</p>
-              <p class="muted">MP4, WebM or MOV. Up to 2 minutes and 50 MB.</p>
-              <label class="button secondary" for="video-files"
-                >Browse video</label
-              ><input
-                id="video-files"
-                type="file"
-                accept="video/mp4,video/webm,video/quicktime"
-                class="file-input"
-              />
+          <div class="two-col uploads">
+            <div>
+              <label class="upload-label" for="shot-files">Screenshots <span class="optional">Optional</span></label>
+              <div class="drop" data-drop="shots">
+                <label for="shot-files">Drop images or <span class="upload-link">browse</span></label>
+                <p class="muted">Up to 10 images · 10 MB each</p>
+                <input id="shot-files" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/tiff,.tif,.tiff" multiple class="file-input" />
+              </div>
             </div>
-          </div>
-          <div
-            id="panel-shots"
-            role="tabpanel"
-            aria-labelledby="tab-shots"
-            hidden
-          >
-            <div class="drop" data-drop="shots">
-              <p>Drop screenshots in the order they happened.</p>
-              <p class="muted">Up to 10 images, 10 MB each. PNG, JPEG, WebP, GIF, BMP or TIFF.</p>
-              <label class="button secondary" for="shot-files"
-                >Browse screenshots</label
-              ><input
-                id="shot-files"
-                type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/tiff,.tif,.tiff"
-                multiple
-                class="file-input"
-              />
+            <div>
+              <label class="upload-label" for="video-files">Video <span class="optional">Optional</span></label>
+              <div class="drop" data-drop="video">
+                <label for="video-files">Drop a recording or <span class="upload-link">browse</span></label>
+                <p class="muted">MP4, WebM, MOV · 2 min · 50 MB</p>
+                <input id="video-files" type="file" accept="video/mp4,video/webm,video/quicktime" class="file-input" />
+              </div>
             </div>
           </div>
           <div id="file-list" class="file-list"></div>
-          <p id="media-note" class="notice" hidden>
-            Selected media will be read together with any written steps.
-          </p>
-          <div id="panel-steps" role="tabpanel" aria-labelledby="tab-steps">
-            <div class="field" style="margin-top: 24px">
-              <label for="steps">Written steps · optional with media</label
-              ><textarea
-                id="steps"
-                rows="6"
-                maxlength="6000"
-                placeholder="1. Open the cart page&#10;2. Add two items&#10;3. Apply the discount&#10;4. Remove one item&#10;5. Check the total"
-              ></textarea>
-            </div>
+          <p id="media-note" class="notice" hidden></p>
+          <div class="field">
+            <label for="target-url">App URL</label>
+            <input class="mono" id="target-url" type="url" required placeholder="https://staging.your-app.com" maxlength="1000" />
           </div>
           <div class="two-col">
             <div class="field">
-              <label for="expected">Expected</label
-              ><textarea
-                id="expected"
-                rows="2"
-                required
-                maxlength="1200"
-                placeholder="What should happen?"
-              ></textarea>
+              <label for="expected">Expected</label>
+              <textarea id="expected" rows="2" required maxlength="1200" placeholder="What should happen?"></textarea>
             </div>
             <div class="field">
-              <label for="actual">Reported actual behavior</label
-              ><textarea
-                id="actual"
-                rows="2"
-                maxlength="1200"
-                placeholder="What happened instead?"
-              ></textarea>
+              <label for="actual">Actual <span class="optional">Optional</span></label>
+              <textarea id="actual" rows="2" maxlength="1200" placeholder="What happened instead?"></textarea>
             </div>
           </div>
         </section>
-        <section class="section">
-          <h2 class="section-title">Target</h2>
-          <div class="field">
-            <label for="target-url">App URL</label
-            ><input
-              class="mono"
-              id="target-url"
-              type="url"
-              required
-              placeholder="https://staging.your-app.com"
-              maxlength="1000"
-            />
-          </div>
-          <p class="mono muted">
-            Browser session · 10 minute limit<br />Evidence is read before the browser starts.
-          </p>
-        </section>
-        <div class="actions">
-          <span class="muted" style="font-size: 13px"
-            >Follow the run live. Stop it at any time.</span
-          ><button class="button" id="start-run" type="submit">
-            Start reproduction <span aria-hidden="true">↗</span>
-          </button>
+        <div class="actions form-footer">
+          <span class="mono muted">Browser session · 10 minute limit</span>
+          <button class="button" id="start-run" type="submit">Start reproduction</button>
         </div>
         <p id="form-message" class="message" role="status"></p>
       </form>

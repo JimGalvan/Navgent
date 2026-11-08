@@ -1,5 +1,7 @@
 const $ = (id) => document.getElementById(id);
 const page = document.body.dataset.page;
+const header = document.querySelector("[data-app-header]");
+if (header) header.innerHTML = '<a class="brand" href="/">Reprobe</a><nav aria-label="Primary"><a data-nav="new" href="/app">New</a><a data-nav="live" href="/app">Live</a><a data-nav="reports" href="/app/reports">Reports</a><span id="account-email" class="account-name muted"></span><a id="logout" href="/logout">Log out</a></nav>';
 const preview = location.pathname.startsWith("/preview");
 const terminal = new Set(["succeeded", "failed", "cancelled", "timed_out"]);
 const draftKey = "reprobe.draft";
@@ -32,6 +34,11 @@ const labels = {
   cancelled: "Stopped",
   timed_out: "Timed out",
 };
+const verdictLabels = {
+  reproduced: "Reproduced",
+  not_reproduced: "Not reproduced",
+  inconclusive: "Inconclusive",
+};
 let lastLive = null;
 try {
   lastLive = sessionStorage.getItem("reprobe.last-run");
@@ -41,7 +48,7 @@ for (const link of document.querySelectorAll("[data-nav]")) {
     link.dataset.nav === page ||
     (page === "report" && link.dataset.nav === "reports")
   )
-    link.classList.add("active");
+    { link.classList.add("active"); link.setAttribute("aria-current", "page"); }
   if (preview)
     link.href =
       "/preview/" +
@@ -111,9 +118,14 @@ function statusElement(status) {
   const el = node("span", undefined, "status");
   el.append(
     node("span", "", `dot ${status}`),
-    node("span", labels[status] || status),
+    node("span", verdictLabels[status] || labels[status] || status),
   );
   return el;
+}
+function durationText(run) {
+  const end = terminal.has(run.status) ? Date.parse(run.updated_at) : Date.now();
+  const seconds = Math.max(0, Math.floor((end - Date.parse(run.created_at)) / 1000));
+  return Number.isFinite(seconds) ? Math.floor(seconds / 60) + "m " + String(seconds % 60).padStart(2, "0") + "s" : "";
 }
 function showHistory(runs) {
   const host = $("history");
@@ -137,14 +149,8 @@ function showHistory(runs) {
     a.append(
       node("span", shortId(run.id), "mono muted"),
       node("span", d.title),
-      statusElement(run.status),
-      node(
-        "time",
-        new Date(run.created_at).toLocaleDateString(undefined, {
-          month: "short",
-          day: "numeric",
-        }),
-      ),
+      run.verdict ? statusElement(run.verdict.verdict) : statusElement(run.status),
+      node("time", durationText(run), "mono muted"),
     );
     host.append(a);
   }
@@ -317,32 +323,30 @@ if (page === "new") {
         } catch {}
     });
   }
-  let activeTab = "steps";
   const files = { video: [], shots: [] };
   let objectUrls = [];
   function renderFiles() {
     objectUrls.forEach(URL.revokeObjectURL);
     objectUrls = [];
     $("file-list").replaceChildren();
-    const chosen = files[activeTab] || [];
-    chosen.forEach((file, i) => {
+    for (const [kind, chosen] of Object.entries(files)) chosen.forEach((file, i) => {
       const div = node("div", undefined, "file-item");
       const media = document.createElement(
-        activeTab === "video" ? "video" : "img",
+        kind === "video" ? "video" : "img",
       );
       const url = URL.createObjectURL(file);
       objectUrls.push(url);
       media.src = url;
-      if (activeTab === "video") media.controls = true;
+      if (kind === "video") media.controls = true;
       else media.alt = file.name;
       const remove = node("button", "Remove", "text-button");
       remove.type = "button";
       remove.onclick = () => {
-        files[activeTab].splice(i, 1);
+        files[kind].splice(i, 1);
         renderFiles();
       };
       div.append(media, node("p", file.name), remove);
-      if (activeTab === "shots" && i > 0) {
+      if (kind === "shots" && i > 0) {
         const move = node("button", "Move earlier", "text-button");
         move.type = "button";
         move.onclick = () => {
@@ -361,31 +365,6 @@ if (page === "new") {
     $("media-note").textContent = preview
       ? "Design preview only. Files will not be uploaded or analyzed."
       : `${selected.join(" and ")} selected. All selected media and written steps will be read together. This can take up to 30 seconds.`;
-  }
-  function pick(tab) {
-    activeTab = tab;
-    for (const button of document.querySelectorAll("[data-tab]")) {
-      button.setAttribute("aria-selected", String(button.dataset.tab === tab));
-      button.tabIndex = button.dataset.tab === tab ? 0 : -1;
-    }
-    $("panel-video").hidden = tab !== "video";
-    $("panel-shots").hidden = tab !== "shots";
-    renderFiles();
-  }
-  for (const button of document.querySelectorAll("[data-tab]")) {
-    button.onclick = () => pick(button.dataset.tab);
-    button.onkeydown = (event) => {
-      const tabs = [...document.querySelectorAll("[data-tab]")];
-      let index = tabs.indexOf(button);
-      if (event.key === "ArrowRight") index = (index + 1) % 3;
-      else if (event.key === "ArrowLeft") index = (index + 2) % 3;
-      else if (event.key === "Home") index = 0;
-      else if (event.key === "End") index = 2;
-      else return;
-      event.preventDefault();
-      pick(tabs[index].dataset.tab);
-      tabs[index].focus();
-    };
   }
   function accept(kind, selection) {
     $("form-message").textContent = "";
@@ -476,6 +455,7 @@ function renderPlan(todos, hostId = "plan", titleId = "plan-title", heading = "P
     : `${heading} · ${todos.filter((x) => x.status === "completed").length} of ${todos.length}`;
   todos.forEach((todo, i) => {
     const button = node("button", undefined, "plan-item");
+    button.dataset.status = todo.status;
     button.type = "button";
     const copy = node("span", todo.content, "plan-copy");
     if (todo.source) copy.append(node("small", todo.source, "plan-source"));
@@ -487,7 +467,7 @@ function renderPlan(todos, hostId = "plan", titleId = "plan-title", heading = "P
     button.onclick = () => {
       for (const b of $(hostId).children) b.classList.remove("selected");
       button.classList.add("selected");
-      $("step-heading").textContent = "Step " + (i + 1);
+      $("step-heading").textContent = "Why, step " + (i + 1);
       $("step-detail").textContent =
         todo.content + " · " + (todo.source || todo.status.replaceAll("_", " ")) + ".";
     };
@@ -535,11 +515,6 @@ function renderReportBrief(run) {
     });
   }
 }
-const verdictLabels = {
-  reproduced: "Reproduced",
-  not_reproduced: "Not reproduced",
-  inconclusive: "Inconclusive",
-};
 function renderVerdict(verdict, brief) {
   const host = $("verdict");
   host.hidden = !verdict;
@@ -715,8 +690,15 @@ if (page === "live") {
     brief = null,
     evidenceFailed = false,
     currentBriefStep = 0,
-    started = Date.now();
+    started = Date.now(),
+    limitSeconds = 600,
+    captureNextFrame = true;
+  const capturedFrames = [];
   const seen = new Set();
+  function updateProgress() {
+    const items = [...$("plan").children].filter(item => item.classList.contains("plan-item"));
+    $("run-progress").value = items.length ? items.filter(item => item.dataset.status === "completed").length / items.length * 100 : 0;
+  }
   function advanceBriefStep(step) {
     if (!Number.isInteger(step) || step <= currentBriefStep || !brief?.steps[step - 1]) return;
     currentBriefStep = step;
@@ -729,6 +711,8 @@ if (page === "live") {
   function setStatus(status) {
     $("run-status").textContent = labels[status] || status;
     $("run-dot").className = "dot " + status;
+    $("run-progress").hidden = terminal.has(status);
+    document.body.classList.toggle("stream-active", !terminal.has(status));
     if (status === "reading_evidence") {
       $("feed-label").textContent = "READING EVIDENCE";
       $("screen-waiting").textContent = "Reading your evidence before starting the browser. This usually takes a few seconds, up to 30 seconds.";
@@ -768,7 +752,23 @@ if (page === "live") {
         return;
       }
       if (response.ok && response.status !== 204) {
-        const next = URL.createObjectURL(await response.blob());
+        const blob = await response.blob();
+        const next = URL.createObjectURL(blob);
+        if (captureNextFrame) {
+          captureNextFrame = false;
+          const url = URL.createObjectURL(blob);
+          capturedFrames.push(url);
+          const thumb = node("img");
+          thumb.src = url;
+          thumb.alt = $("latest-action").textContent;
+          $("frame-strip").append(thumb);
+          $("frame-strip").hidden = false;
+          while (capturedFrames.length > 8) {
+            URL.revokeObjectURL(capturedFrames.shift());
+            $("frame-strip").firstElementChild.remove();
+          }
+          $("frame-strip").scrollLeft = $("frame-strip").scrollWidth;
+        }
         $("browser-screen").src = next;
         $("browser-screen").hidden = false;
         $("screen-waiting").hidden = true;
@@ -789,6 +789,7 @@ if (page === "live") {
         $("execution-section").hidden = false;
         renderPlan(event.payload.todos || [], "execution-plan", "execution-title", "Browser progress");
       } else renderPlan(event.payload.todos || []);
+      updateProgress();
       return;
     }
     if (event.event_type === "evidence.ready") {
@@ -798,7 +799,8 @@ if (page === "live") {
       currentBriefStep = 0;
       advanceBriefStep(step);
     }
-    if (event.event_type.startsWith("browser.action.")) advanceBriefStep(event.payload.brief_step);
+    if (event.event_type.startsWith("browser.action.")) { advanceBriefStep(event.payload.brief_step); updateProgress(); }
+    if (event.event_type === "browser.action.completed") captureNextFrame = true;
     if (event.event_type === "browser.action.completed" && inputActions.has(event.payload.action) && Array.isArray(event.payload.fields)) {
       $("form-state-section").hidden = false;
       $("form-state").replaceChildren(...event.payload.fields.map(line => node("div", line)));
@@ -817,9 +819,16 @@ if (page === "live") {
     const activity = $("activity");
     if (seen.size === 1) activity.replaceChildren();
     const d = appendEvent(activity, event);
-    if (d)
-      $("latest-action").textContent =
-        d.title + (d.detail ? " · " + d.detail : "");
+    if (d) {
+      if (event.event_type.startsWith("browser.action.")) {
+        $("latest-action").replaceChildren(
+          node("span", event.payload.action || "Action", "action-kind"),
+          node("span", " · " + (event.payload.target || "") +
+            (event.payload.brief_step ? " · step " + event.payload.brief_step : "") +
+            " · " + new Date(event.created_at).toLocaleTimeString()),
+        );
+      } else $("latest-action").textContent = d.title + (d.detail ? " · " + d.detail : "");
+    }
     while (activity.children.length > 150) activity.firstElementChild.remove();
     activity.scrollTop = activity.scrollHeight;
     if (event.event_type === "run.status") {
@@ -860,7 +869,7 @@ if (page === "live") {
     const seconds = Math.max(0, Math.floor((Date.now() - started) / 1000));
     if (!stopped)
       $("elapsed").textContent =
-        `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")} / 10:00`;
+        `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")} / ${String(Math.floor(limitSeconds / 60)).padStart(2, "0")}:${String(limitSeconds % 60).padStart(2, "0")}`;
   }, 1000);
   $("cancel-run").onclick = async () => {
     if (preview) {
@@ -947,7 +956,10 @@ if (page === "live") {
       $("run-title").textContent = data.title;
       $("browser-url").textContent = data.url || "Browser";
       started = Date.parse(response.run.created_at);
+      limitSeconds = response.run.max_runtime_seconds || 600;
       setStatus(response.run.status);
+      if (stopped) $("elapsed").textContent = durationText(response.run);
+      updateProgress();
       refreshFrame();
       for (const event of await api(`/api/runs/${runId}/events`)) receive(event);
       if (!stopped) {
@@ -1003,6 +1015,7 @@ if (page === "live") {
     clearInterval(clock);
     clearTimeout(frameTimer);
     if (frameUrl) URL.revokeObjectURL(frameUrl);
+    capturedFrames.forEach(URL.revokeObjectURL);
   });
 }
 if (page === "report") {
@@ -1054,14 +1067,14 @@ if (page === "report") {
       $("run-status").textContent = labels[record.status] || record.status;
       $("run-dot").className = "dot " + record.status;
       $("report-title").textContent = data.title;
-      $("report-description").hidden = terminal.has(record.status);
-      $("report-description").textContent = "Open the live viewer to follow this run.";
+      $("report-description").hidden = !record.verdict?.reason && terminal.has(record.status);
+      $("report-description").textContent = record.verdict?.reason || "Open the live viewer to follow this run.";
       renderVerdict(record.verdict, record.repro_brief);
       renderRecordings(record);
       $("report-output").textContent =
         record.final_output || record.error || "No final output was captured.";
-      $("report-expected").textContent = data.expected || "Not provided";
-      $("report-actual").textContent = data.actual || "Not provided";
+      $("report-expected").textContent = data.expected || "";
+      $("report-actual").textContent = data.actual || "";
       renderReportBrief(record);
       const rerun = $("rerun");
       if (terminal.has(record.status)) {
@@ -1095,10 +1108,12 @@ if (page === "report") {
         window.addEventListener("pagehide", () => URL.revokeObjectURL(url), {
           once: true,
         });
-      } else
+      } else {
+        $("evidence-section").hidden = true;
         $("evidence").replaceChildren(
           node("p", "No browser frame was saved for this run.", "empty"),
         );
+      }
       for (const event of await api(`/api/runs/${runId}/events`)) {
         if (!seen.has(event.sequence)) {
           seen.add(event.sequence);
@@ -1108,6 +1123,15 @@ if (page === "report") {
       }
       renderActionLog($("action-log"), events);
       $("run-events-section").hidden = !$("report-events").childElementCount;
+      $("run-status").parentElement.append(node("span", durationText(record), "mono muted"));
+      if (record.verdict) {
+        $("run-status").textContent = verdictLabels[record.verdict.verdict] || labels[record.status];
+        $("run-dot").className = "dot " + record.verdict.verdict;
+      }
+      $("report-output-section").hidden = !record.final_output && !record.error;
+      $("actions-section").hidden = !events.some(event => event.event_type.startsWith("browser.action."));
+      for (const id of ["report-expected", "report-actual"]) $(id).closest(".field").hidden = !$(id).textContent;
+      $("comparison-section").hidden = !$("report-expected").textContent && !$("report-actual").textContent && !record.repro_brief;
       jsonDownload();
     } catch (error) {
       $("report-message").textContent = error.message;

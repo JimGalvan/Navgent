@@ -10,22 +10,13 @@
     <script type="module" src="/static/ui.js"></script>
   </head>
   <body data-page="report">
-    <header class="top">
-      <a class="brand" href="/">Reprobe</a>
-      <nav aria-label="Primary">
-        <a data-nav="new" href="/app">New</a
-        ><a data-nav="live" href="/app">Live</a
-        ><a data-nav="reports" href="/app/reports">Reports</a
-        ><span id="account-email" class="account-name muted"></span
-        ><a id="logout" href="/logout">Log out</a>
-      </nav>
-    </header>
+    <header class="top" data-app-header></header>
     <div id="preview-banner" class="preview-banner" hidden>
       <span>Design preview · sample data, no agent execution</span
       ><a href="/preview/new">New</a><a href="/preview/live">Live</a
       ><a href="/preview/report">Report</a>
     </div>
-    <main class="narrow report" style="max-width: 1150px">
+    <main class="narrow report">
       <div class="status">
         <span class="dot" id="run-dot"></span
         ><span id="run-status">Loading result</span
@@ -40,75 +31,33 @@
         ><a class="quiet" href="/app/reports">All reports</a>
       </div>
       <p id="report-message" class="message" role="status"></p>
-      <section id="verdict" class="verdict" aria-label="Reproduction verdict" hidden></section>
-      <div class="report-grid section">
-        <section>
-          <h2 class="section-title">Evidence</h2>
-          <div id="evidence">
-            <p class="empty">Looking for a saved browser frame…</p>
-          </div>
-          <p class="notice" id="evidence-caption">
-            Final browser frame
-          </p>
-          <section id="recording-section" class="section" hidden>
-            <h2 class="section-title">Browser recording</h2>
-            <video id="recording-player" controls playsinline preload="metadata" aria-label="Browser recording, tab 1"></video>
-          </section>
-          <section id="key-frames-section" class="section" hidden>
-            <h2 class="section-title">Submitted evidence · key frames</h2>
-            <p class="notice">Frames read from your uploads before execution. These show the reported bug, not observations from this run.</p>
-            <div id="key-frames" class="key-frames"></div>
-          </section>
-          <section id="report-brief" class="section" hidden>
-            <h2 class="section-title">Evidence plan</h2>
-            <ol id="report-steps" class="evidence-steps"></ol>
-            <h2 class="section-title">Unknowns in the evidence</h2>
-            <ul id="report-unknowns"></ul>
-          </section>
-          <section class="section">
-            <h2 class="section-title">Run output</h2>
-            <div id="report-output" class="output"></div>
-          </section>
-          <section class="section">
-            <h2 class="section-title">Step log</h2>
-            <div id="action-log"></div>
-          </section>
-          <section id="run-events-section" class="section">
-            <h2 class="section-title">What Navgent did</h2>
-            <div id="report-events"></div>
-          </section>
+      <section class="section" id="evidence-section">
+        <h2 class="section-title">Evidence</h2>
+        <div id="evidence"><p class="empty">Looking for a saved browser frame…</p></div>
+        <p class="notice mono" id="evidence-caption">Final browser frame</p>
+      </section>
+      <section class="section" id="comparison-section">
+        <h2 class="section-title">Expected vs actual</h2>
+        <div class="two-col comparison-values">
+          <div class="field"><span class="muted">Expected</span><p class="mono" id="report-expected"></p></div>
+          <div class="field"><span class="muted">User-reported actual</span><p class="mono" id="report-actual"></p></div>
+        </div>
+        <section id="report-assertion" hidden>
+          <h3 class="section-title">Planned assertion</h3>
+          <div class="field"><span class="muted">Check</span><p id="assertion-check"></p></div>
+          <div class="field"><span class="muted">Look in</span><p id="assertion-look-in"></p></div>
         </section>
-        <aside>
-          <h2 class="section-title">Expected vs reported</h2>
-          <div class="field">
-            <span class="muted">Expected</span>
-            <p id="report-expected"></p>
-          </div>
-          <div class="field">
-            <span class="muted">User-reported actual</span>
-            <p id="report-actual"></p>
-          </div>
-          <section id="report-assertion" class="section" hidden>
-            <h2 class="section-title">Planned assertion</h2>
-            <div class="field"><span class="muted">Check</span><p id="assertion-check"></p></div>
-            <div class="field"><span class="muted">Look in</span><p id="assertion-look-in"></p></div>
-          </section>
-          <section class="section">
-            <h2 class="section-title">Download</h2>
-            <div id="recording-downloads"></div>
-            <a id="download-frame" class="download" hidden
-              >Browser screenshot (JPEG)</a
-            ><a id="download-json" class="download" hidden>Run record (JSON)</a
-            ><button class="download" disabled>
-              Annotated screenshot · coming later</button
-            ><button class="download" disabled>
-              Network log (HAR) · coming later</button
-            ><button class="download" disabled>
-              Playwright script · coming later
-            </button>
-          </section>
-        </aside>
-      </div>
+      </section>
+      <section id="verdict" class="verdict" aria-label="Reproduction verdict" hidden></section>
+      <section class="section" id="actions-section">
+        <h2 class="section-title">What the agent did</h2><div id="action-log"></div>
+      </section>
+      <section id="run-events-section" class="section"><h2 class="section-title">Agent stream</h2><div id="report-events" class="mono"></div></section>
+      <section id="report-output-section" class="section"><h2 class="section-title">Run output</h2><div id="report-output" class="output"></div></section>
+      <section id="recording-section" class="section" hidden><h2 class="section-title">Browser recording</h2><video id="recording-player" controls playsinline preload="metadata" aria-label="Browser recording, tab 1"></video></section>
+      <section id="key-frames-section" class="section" hidden><h2 class="section-title">Submitted evidence · key frames</h2><p class="notice">Frames read from your uploads before execution. These show the reported bug, not observations from this run.</p><div id="key-frames" class="key-frames"></div></section>
+      <section id="report-brief" class="section" hidden><h2 class="section-title">Evidence plan</h2><ol id="report-steps" class="evidence-steps"></ol><h2 class="section-title">Unknowns in the evidence</h2><ul id="report-unknowns"></ul></section>
+      <section class="section" id="download-section"><h2 class="section-title">Download</h2><div class="download-links"><div id="recording-downloads"></div><a id="download-frame" class="download" hidden>Browser screenshot (JPEG)</a><a id="download-json" class="download" hidden>Run record (JSON)</a></div></section>
     </main>
   </body>
 </html>

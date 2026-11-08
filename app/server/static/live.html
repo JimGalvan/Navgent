@@ -10,16 +10,7 @@
     <script type="module" src="/static/ui.js"></script>
   </head>
   <body data-page="live">
-    <header class="top">
-      <a class="brand" href="/">Reprobe</a>
-      <nav aria-label="Primary">
-        <a data-nav="new" href="/app">New</a
-        ><a data-nav="live" href="/app">Live</a
-        ><a data-nav="reports" href="/app/reports">Reports</a
-        ><span id="account-email" class="account-name muted"></span
-        ><a id="logout" href="/logout">Log out</a>
-      </nav>
-    </header>
+    <header class="top" data-app-header></header>
     <div id="preview-banner" class="preview-banner" hidden>
       <span>Design preview · sample data, no agent execution</span
       ><a href="/preview/new">New</a><a href="/preview/live">Live</a
@@ -44,6 +35,7 @@
       </div>
       <p id="run-message" class="message" role="status"></p>
       <section id="verdict" class="verdict" aria-label="Reproduction verdict" aria-live="polite" hidden></section>
+      <progress id="run-progress" class="run-progress" max="100" value="0" aria-label="Plan progress"></progress>
       <div class="viewer-grid">
         <section>
           <div class="browser-chrome">
@@ -61,6 +53,7 @@
           <div id="latest-action" class="browser-action mono">
             Waiting for the first action
           </div>
+          <div id="frame-strip" class="frame-strip" aria-label="Captured browser frames" hidden></div>
           <section id="input-panel" class="answer-panel" hidden>
             <h2 id="input-question">Navgent needs your input</h2>
             <form id="input-form">
@@ -104,14 +97,15 @@
             <h2 class="section-title" id="execution-title">Browser progress</h2>
             <div id="execution-plan"></div>
           </section>
-          <h2 class="section-title">Agent stream</h2>
+        </aside>
+      </div>
+      <section class="agent-stream">          <h2 class="section-title">Agent stream</h2>
           <div class="stream" id="activity" aria-live="off">
             <p class="muted">Waiting for events…</p>
           </div>
           <p id="agent-output" class="muted output"></p>
-        </aside>
-      </div>
-      <footer class="run-footer">
+</section>
+      <footer class="run-footer mono">
         Powered by Navgent · browser actions and frames update live. Reports
         preserve available evidence after the session ends.
       </footer>

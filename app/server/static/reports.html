@@ -10,16 +10,7 @@
     <script type="module" src="/static/ui.js"></script>
   </head>
   <body data-page="reports">
-    <header class="top">
-      <a class="brand" href="/">Reprobe</a>
-      <nav aria-label="Primary">
-        <a data-nav="new" href="/app">New</a
-        ><a data-nav="live" href="/app">Live</a
-        ><a data-nav="reports" href="/app/reports">Reports</a
-        ><span id="account-email" class="account-name muted"></span
-        ><a id="logout" href="/logout">Log out</a>
-      </nav>
-    </header>
+    <header class="top" data-app-header></header>
     <div id="preview-banner" class="preview-banner" hidden>
       <span>Design preview · sample data, no agent execution</span
       ><a href="/preview/new">New</a><a href="/preview/live">Live</a
