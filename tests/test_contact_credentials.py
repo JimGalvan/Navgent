@@ -84,7 +84,7 @@ class AgentContactCredentialTests(unittest.IsolatedAsyncioTestCase):
         return tools, browser, events
 
     async def fill(self, tools, field):
-        return json.loads(await tools["execute_steps"](reason="Test reason.", steps=[{
+        return json.loads(await tools["execute_steps"](reason="Test reason.", brief_step=1, steps=[{
             "action": "fill_credential", "credential_id": str(self.metadata.id),
             "field": field, "element_index": 2 if field == "password" else 1,
         }]))
@@ -106,8 +106,8 @@ class AgentContactCredentialTests(unittest.IsolatedAsyncioTestCase):
             })
             self.assertEqual(browser.fills[-1], (1, value))
             self.assertEqual(events, [
-                {"event_type": "browser.action.started", "payload": {"action": "fill_credential", "target": "Email", "value": "", "reason": "Test reason.", "brief_step": None}},
-                {"event_type": "browser.action.completed", "payload": {"action": "fill_credential", "target": "Email", "value": "", "reason": "Test reason.", "brief_step": None}},
+                {"event_type": "browser.action.started", "payload": {"action": "fill_credential", "target": "Email", "value": "", "reason": "Test reason.", "brief_step": 1}},
+                {"event_type": "browser.action.completed", "payload": {"action": "fill_credential", "target": "Email", "value": "", "reason": "Test reason.", "brief_step": 1}},
             ])
             self.assertNotIn(value, json.dumps(result))
             self.assertNotIn(value, json.dumps(events))
@@ -150,7 +150,7 @@ class AgentContactCredentialTests(unittest.IsolatedAsyncioTestCase):
                 })
                 self.assertEqual(events[-1], {
                     "event_type": "browser.action.failed",
-                    "payload": {"action": "fill_credential", "target": "Email", "value": "", "reason": "Test reason.", "brief_step": None, "error": error},
+                    "payload": {"action": "fill_credential", "target": "Email", "value": "", "reason": "Test reason.", "brief_step": 1, "error": error},
                 })
                 self.assertEqual(browser.fills, [])
                 self.assertEqual(self.provider.resolutions[-1], (self.metadata.id, "attacker.example"))

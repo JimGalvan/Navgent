@@ -65,13 +65,11 @@ class StepPlan(BaseModel):
     reason: str = Field(
         min_length=1, max_length=300, description="One short sentence on why these actions run now.",
     )
-    brief_step: int | None = Field(
-        default=None, ge=1, description="When reproducing a bug, the number of the <steps> item these actions carry out.",
-    )
+    brief_step: int = Field(ge=1, description="The number of the <steps> item these actions carry out.")
 
 
-def check_brief_order(brief_step: int | None, last_brief_step: int) -> None:
-    if brief_step is not None and brief_step < last_brief_step:
+def check_brief_order(brief_step: int, last_brief_step: int) -> None:
+    if brief_step < last_brief_step:
         raise ValueError(
             f"brief step {brief_step} comes after step {last_brief_step}; run the brief steps in order"
         )

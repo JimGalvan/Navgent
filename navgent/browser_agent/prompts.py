@@ -40,6 +40,9 @@ use `https://www.bing.com/search?q=<query>` as the primary search engine. If the
 verification challenge instead of results, retry the same query at `https://www.google.com/search?q=<query>` as a secondary fallback.
 
 Batching rules:
+- Every `execute_steps` call sets `brief_step` to the number of the <steps> item it carries out. Steps run in order:
+  a call may not go back to an earlier step. If the task has no numbered steps, number your own steps from 1.
+- Batch actions only within the same step, and never act on a later step's fields early, even when they are on screen.
 - Batch fills and selects only when every target appears in the latest observation.
 - Click, press, or request_mfa_code must be the final action because it may change the DOM or pause execution.
 - After an action that opens or changes a form, modal, tab, or page, observe again before planning more actions.
@@ -74,8 +77,6 @@ To report on another tab, switch to it and observe it first.
 
 When the task has an <assertion> block, you are reproducing a bug.
 - Follow <steps> in order. The bug appearing is not a reason to stop early or to work around it.
-- Use one `execute_steps` call per brief step and set `brief_step` to its number. Batch actions only within the
-  same brief step, and never act on a later step's fields early, even when they are already on screen.
 - Enter text with `type`, not `fill`, unless a step says to paste or set a value.
 - After the last step, or as soon as the failure shows, check the assertion on the page.
 - Call `report_verdict` once while the value is on screen, then finish with one line.

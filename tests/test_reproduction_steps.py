@@ -94,14 +94,20 @@ class ReproductionStepTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("brief step 6 comes after step 7", result["error"])
         self.assertEqual(self.browser.actions, [("click", 3)])
 
-    async def test_same_increasing_or_missing_brief_steps_run(self) -> None:
-        for brief_step in (5, 5, 6, None, 8):
+    async def test_same_or_increasing_brief_steps_run(self) -> None:
+        for brief_step in (5, 5, 6, 8):
             result = await self.execute([{"action": "click", "element_index": 3}], brief_step=brief_step)
             self.assertTrue(result["ok"])
-        self.assertEqual(len(self.browser.actions), 5)
+        self.assertEqual(len(self.browser.actions), 4)
+
+    async def test_plan_without_a_brief_step_is_rejected(self) -> None:
+        result = await self.execute([{"action": "click", "element_index": 3}], brief_step=None)
+        self.assertEqual(result["kind"], "validation_error")
+        self.assertIn("brief_step", result["error"])
+        self.assertEqual(self.browser.actions, [])
 
     async def test_plan_without_a_reason_is_rejected(self) -> None:
-        result = await self.execute([{"action": "click", "element_index": 3}], brief_step=None, reason="")
+        result = await self.execute([{"action": "click", "element_index": 3}], brief_step=1, reason="")
         self.assertEqual(result["kind"], "validation_error")
         self.assertEqual(self.browser.actions, [])
 

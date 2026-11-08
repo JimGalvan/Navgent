@@ -171,8 +171,7 @@ def build_browser_tools(
                     }
                 )
 
-            if plan.brief_step is not None:
-                last_brief_step = plan.brief_step
+            last_brief_step = plan.brief_step
             previous_url = browser.page.url
             completed = []
             notes = []
