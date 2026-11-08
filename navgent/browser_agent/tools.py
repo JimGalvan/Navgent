@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from uuid import uuid4
 
 from langchain_core.tools import BaseTool, tool
 from langgraph.errors import GraphInterrupt
@@ -12,6 +13,7 @@ from navgent.browser_agent.constants import (
     ACTION_DELAY_SECONDS,
     PAGE_TEXT_CHARACTER_LIMIT,
 )
+from navgent.browser_agent.findings import finding_payloads
 from navgent.browser_agent.schema_utils import SchemaUtils
 from navgent.browser_agent.steps import (
     BrowserStep,
@@ -85,6 +87,7 @@ def build_browser_tools(
 
         `observed` quotes page text, or a form field as `Label: value` with `(empty)` for a blank field.
         Separate several quotes with `; `, such as `First Name: r; Last Name: (empty)`.
+        For `reproduced`, each quote that appears once on screen is outlined in the recording.
         """
         if verdict != "inconclusive":
             async with browser_lock:
@@ -93,13 +96,17 @@ def build_browser_tools(
             problem = check_observed(observed, page_text + "\n" + "\n".join(form_values))
             if problem:
                 return problem
+        verdict_id = uuid4().hex
         publish_custom_event("reproduction.verdict", {
             "verdict": verdict,
             "expected": expected,
             "observed": observed,
             "step_number": step_number,
             "reason": reason,
+            "verdict_id": verdict_id,
         })
+        if verdict == "reproduced":
+            await publish_findings(verdict_id, observed, expected, step_number)
         return "Verdict recorded. Finish with a one-line summary."
 
     @tool
@@ -178,6 +185,7 @@ def build_browser_tools(
                 except GraphInterrupt:
                     raise
                 except Exception as exception:
+                    publish_clicks(step, plan)
                     publish_custom_event("browser.action.failed", {**event_payload, "error": str(exception)})
                     return json.dumps(
                         {
@@ -190,6 +198,7 @@ def build_browser_tools(
                         }
                     )
 
+                publish_clicks(step, plan)
                 if note is not None:
                     notes.append(note)
                 completed.append(reference)
@@ -212,6 +221,20 @@ def build_browser_tools(
                     "notes": notes,
                 }
             )
+
+    async def publish_findings(verdict_id: str, observed: str, expected: str, step_number: int | None) -> None:
+        try:
+            async with browser_lock:
+                payloads = await finding_payloads(browser, verdict_id, observed, expected, step_number)
+        except Exception:
+            logger.warning("Could not locate the finding on screen", exc_info=True)
+            return
+        for payload in payloads:
+            publish_custom_event("reproduction.finding", payload)
+
+    def publish_clicks(step: BrowserStep, plan: StepPlan) -> None:
+        for click in browser.take_performed_clicks():
+            publish_custom_event("browser.click", click.event_payload(step.action, plan.brief_step))
 
     async def read_form_values() -> list[str]:
         try:

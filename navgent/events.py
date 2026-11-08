@@ -91,6 +91,21 @@ class BrowserActionFailedEvent:
 
 
 @dataclass(frozen=True)
+class BrowserClickEvent:
+    click_id: str
+    action: BrowserAction
+    brief_step: int | None
+    recording_id: str | None
+    x: float
+    y: float
+    viewport_width: int
+    viewport_height: int
+    wall_time_ms: float
+    recording_time_ms: float | None
+    event_type: Literal["browser.click"] = field(default="browser.click", init=False)
+
+
+@dataclass(frozen=True)
 class BrowserTabChangedEvent:
     tab_id: str
     event_type: Literal["browser.tab.changed"] = field(default="browser.tab.changed", init=False)
@@ -172,7 +187,29 @@ class ReproductionVerdictEvent:
     observed: str
     step_number: int | None
     reason: str
+    verdict_id: str = ""
     event_type: Literal["reproduction.verdict"] = field(default="reproduction.verdict", init=False)
+
+
+@dataclass(frozen=True)
+class ReproductionFindingEvent:
+    annotation_id: str
+    verdict_id: str
+    number: int
+    explanation: str
+    brief_step: int | None
+    recording_id: str | None
+    x: float
+    y: float
+    width: float
+    height: float
+    viewport_width: int
+    viewport_height: int
+    start_wall_time_ms: float
+    end_wall_time_ms: float
+    start_recording_time_ms: float | None
+    end_recording_time_ms: float | None
+    event_type: Literal["reproduction.finding"] = field(default="reproduction.finding", init=False)
 
 
 _InputEvent: TypeAlias = (
@@ -188,6 +225,7 @@ _BrowserEvent: TypeAlias = (
     | BrowserActionStartedEvent
     | BrowserActionCompletedEvent
     | BrowserActionFailedEvent
+    | BrowserClickEvent
     | BrowserTabChangedEvent
     | BrowserFrameChangedEvent
     | BrowserObservationEvent
@@ -204,5 +242,11 @@ _SessionEvent: TypeAlias = (
     | BrowserControlAppliedEvent
 )
 AgentEvent: TypeAlias = (
-    AgentMessageDeltaEvent | _InputEvent | _BrowserEvent | TaskTodosEvent | _SessionEvent | ReproductionVerdictEvent
+    AgentMessageDeltaEvent
+    | _InputEvent
+    | _BrowserEvent
+    | TaskTodosEvent
+    | _SessionEvent
+    | ReproductionVerdictEvent
+    | ReproductionFindingEvent
 )

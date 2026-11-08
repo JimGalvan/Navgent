@@ -12,6 +12,7 @@ from navgent import constants
 from navgent.browser.browser_manager import BrowserManager
 from navgent.browser.browser_session import BrowserSession
 from navgent.browser.constants import FRAME_QUALITY, FRAME_QUALITY_TAKEOVER
+from navgent.browser.recording import Recording
 from navgent.browser_agent.browser_agent import build_browser_agent
 from navgent.browser_agent.context import AgentContext
 from navgent.credentials import CredentialProvider, SelectedCredentialProvider
@@ -21,6 +22,7 @@ from navgent.events import (
     AgentMessageDeltaEvent,
     BrowserCaptureFailedEvent,
     BrowserCaptureRecoveredEvent,
+    BrowserClickEvent,
     BrowserControlAppliedEvent,
     InputReceivedEvent,
     RunCancelledEvent,
@@ -127,6 +129,8 @@ class BrowserAgentSession:
             submitted = await self._browser.fill_sensitive(
                 pending.element_index, value, pending.submit_element_index,
             )
+            for click in self._browser.take_performed_clicks():
+                await self._emit(BrowserClickEvent(**click.event_payload("request_mfa_code", None)))
             self._resuming = True
             await self._emit(SensitiveInputReceivedEvent(request_id, pending.kind))
             await self._start_turn(self._runtime.resume_input({"entered": True, "submitted": submitted}))
@@ -217,6 +221,11 @@ class BrowserAgentSession:
     @property
     def recording_paths(self) -> list[Path]:
         return list(self._browser.recording_paths)
+
+    @property
+    def recordings(self) -> list[Recording]:
+        """Timing metadata for each file in `recording_paths`, in the same order. Read after close()."""
+        return list(self._browser.recordings)
 
     def events(self) -> AsyncIterator[AgentEvent]:
         return self._events()

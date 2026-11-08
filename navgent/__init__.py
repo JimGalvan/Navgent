@@ -4,13 +4,16 @@ from navgent.browser.constants import (
     VIEWPORT_HEIGHT,
     VIEWPORT_WIDTH,
 )
+from navgent.browser.recording import Recording
 from navgent.credentials import CredentialProvider
 from navgent.events import (
     AgentEvent,
     AgentMessageDeltaEvent,
+    BrowserClickEvent,
     BrowserControlAppliedEvent,
     BrowserFrameChangedEvent,
     InputRequiredEvent,
+    ReproductionFindingEvent,
     ReproductionVerdictEvent,
     RunCancelledEvent,
     RunCompletedEvent,
@@ -51,6 +54,7 @@ __all__ = [
     "AgentMessageDeltaEvent",
     "AgentSettings",
     "BrowserAgentSession",
+    "BrowserClickEvent",
     "BrowserControlAction",
     "BrowserControlAppliedEvent",
     "BrowserFrameChangedEvent",
@@ -63,6 +67,8 @@ __all__ = [
     "KeyAction",
     "MouseDownAction",
     "MouseUpAction",
+    "Recording",
+    "ReproductionFindingEvent",
     "ReproductionVerdictEvent",
     "RunCancelledEvent",
     "RunCompletedEvent",
