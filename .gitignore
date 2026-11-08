@@ -13,3 +13,16 @@ dist/
 *.iml
 /logs/
 /docs/
+
+# Demo video media (keep footage, voice tracks and exports out of git)
+*.mp4
+*.webm
+*.mov
+*.mkv
+*.avi
+/video/**/*.mp3
+/video/**/*.wav
+/video/**/*.m4a
+/video/**/*.prproj
+/video/**/*.drp
+/video/footage/
