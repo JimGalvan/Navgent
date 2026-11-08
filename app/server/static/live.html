@@ -87,7 +87,7 @@
         <aside>
           <h2 class="section-title" id="plan-title">Plan</h2>
           <div id="plan">
-            <p class="muted">The plan will appear as Navgent works.</p>
+            <p class="muted">The plan will appear after the evidence is read.</p>
           </div>
           <div class="step-detail">
             <h2 id="step-heading" style="font-size: 15px">About this step</h2>
@@ -95,6 +95,10 @@
               Select a plan item to inspect its current state.
             </p>
           </div>
+          <section id="execution-section" hidden>
+            <h2 class="section-title" id="execution-title">Browser progress</h2>
+            <div id="execution-plan"></div>
+          </section>
           <h2 class="section-title">Agent stream</h2>
           <div class="stream" id="activity" aria-live="off">
             <p class="muted">Waiting for events…</p>

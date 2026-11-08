@@ -521,9 +521,20 @@ time {
   padding: 13px 18px;
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  gap: 16px;
   border: 1px solid var(--line);
   border-bottom: 0;
   background: var(--surface);
+}
+#browser-url {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#feed-label {
+  flex: none;
 }
 .browser-viewport {
   aspect-ratio: 1280/900;
@@ -576,6 +587,55 @@ time {
   margin-left: auto;
   color: var(--muted);
   font-size: 11px;
+}
+.plan-copy {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.plan-copy .plan-source {
+  display: block;
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+#execution-section {
+  margin-bottom: 32px;
+}
+.evidence-steps {
+  padding-left: 24px;
+  margin-bottom: 36px;
+}
+.evidence-steps li {
+  padding: 12px 0 16px 8px;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.evidence-steps p {
+  margin: 0 0 6px;
+}
+.evidence-steps small {
+  color: var(--muted);
+  font-size: 13px;
+}
+.key-frames {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 24px;
+}
+.key-frames figure {
+  margin: 0;
+  min-width: 0;
+}
+.key-frames img {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--line);
+}
+.key-frames figcaption {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 14px;
 }
 .step-detail {
   padding: 22px 0;

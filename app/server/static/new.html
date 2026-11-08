@@ -29,8 +29,8 @@
       <div class="intro">
         <h1>Show the bug.<br />Get the proof.</h1>
         <p class="muted">
-          Add the evidence and the steps. Navgent follows them in a live browser
-          and saves the result.
+          Add written steps, screenshots or a recording. Navgent reads the
+          evidence, follows the plan in a live browser and saves the result.
         </p>
       </div>
       <form id="reproduction-form">
@@ -80,7 +80,7 @@
           >
             <div class="drop" data-drop="video">
               <p>Show us where it went wrong.</p>
-              <p class="muted">Choose a recording to preview. Up to 50 MB.</p>
+              <p class="muted">MP4, WebM or MOV. Up to 2 minutes and 50 MB.</p>
               <label class="button secondary" for="video-files"
                 >Browse video</label
               ><input
@@ -99,13 +99,13 @@
           >
             <div class="drop" data-drop="shots">
               <p>Drop screenshots in the order they happened.</p>
-              <p class="muted">PNG or JPG. Up to 10 images, 10 MB each.</p>
+              <p class="muted">Up to 10 images, 10 MB each. PNG, JPEG, WebP, GIF, BMP or TIFF.</p>
               <label class="button secondary" for="shot-files"
                 >Browse screenshots</label
               ><input
                 id="shot-files"
                 type="file"
-                accept="image/png,image/jpeg"
+                accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/tiff,.tif,.tiff"
                 multiple
                 class="file-input"
               />
@@ -113,17 +113,14 @@
           </div>
           <div id="file-list" class="file-list"></div>
           <p id="media-note" class="notice" hidden>
-            Preview only. Media analysis is being built; add written steps below
-            to run a real reproduction. Files stay in this browser and are not
-            uploaded.
+            Selected media will be read together with any written steps.
           </p>
           <div id="panel-steps" role="tabpanel" aria-labelledby="tab-steps">
             <div class="field" style="margin-top: 24px">
-              <label for="steps">Steps to reproduce · one action per line</label
+              <label for="steps">Written steps · optional with media</label
               ><textarea
                 id="steps"
                 rows="6"
-                required
                 maxlength="6000"
                 placeholder="1. Open the cart page&#10;2. Add two items&#10;3. Apply the discount&#10;4. Remove one item&#10;5. Check the total"
               ></textarea>
@@ -165,8 +162,7 @@
             />
           </div>
           <p class="mono muted">
-            Browser session · 10 minute limit<br />Infrastructure isolation and
-            media interpretation are not enabled in this build.
+            Browser session · 10 minute limit<br />Evidence is read before the browser starts.
           </p>
         </section>
         <div class="actions">

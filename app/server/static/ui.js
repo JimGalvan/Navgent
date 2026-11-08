@@ -23,6 +23,7 @@ const samplePlan = [
 ];
 const labels = {
   queued: "Queued",
+  reading_evidence: "Reading evidence",
   running: "Running",
   waiting_for_input: "Needs your input",
   ready_for_follow_up: "Saving result",
@@ -68,7 +69,10 @@ $("logout")?.addEventListener("click", () => {
 async function api(url, options = {}) {
   const response = await fetch(url, {
     ...options,
-    headers: { "Content-Type": "application/json", ...options.headers },
+    headers: {
+      ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+      ...options.headers,
+    },
   });
   const body = await response.json().catch(() => ({}));
   if (response.status === 401 && page !== "account") {
@@ -349,6 +353,14 @@ if (page === "new") {
       }
       $("file-list").append(div);
     });
+    const count = files.shots.length + files.video.length;
+    const selected = [];
+    if (files.shots.length) selected.push(`${files.shots.length} screenshot${files.shots.length === 1 ? "" : "s"}`);
+    if (files.video.length) selected.push("1 recording");
+    $("media-note").hidden = count === 0;
+    $("media-note").textContent = preview
+      ? "Design preview only. Files will not be uploaded or analyzed."
+      : `${selected.join(" and ")} selected. All selected media and written steps will be read together. This can take up to 30 seconds.`;
   }
   function pick(tab) {
     activeTab = tab;
@@ -358,7 +370,6 @@ if (page === "new") {
     }
     $("panel-video").hidden = tab !== "video";
     $("panel-shots").hidden = tab !== "shots";
-    $("media-note").hidden = tab === "steps";
     renderFiles();
   }
   for (const button of document.querySelectorAll("[data-tab]")) {
@@ -377,14 +388,18 @@ if (page === "new") {
     };
   }
   function accept(kind, selection) {
+    $("form-message").textContent = "";
     const valid = [...selection].filter((file) =>
       kind === "video"
-        ? ["video/mp4", "video/webm", "video/quicktime"].includes(file.type) &&
+        ? /\.(mp4|webm|mov)$/i.test(file.name) &&
           file.size <= 50 * 1024 ** 2
-        : ["image/png", "image/jpeg"].includes(file.type) &&
+        : /\.(png|jpe?g|webp|gif|bmp|tiff?)$/i.test(file.name) &&
           file.size <= 10 * 1024 ** 2,
     );
-    if (valid.length !== selection.length)
+    const tooMany = kind === "shots"
+      ? files.shots.length + valid.length > 10
+      : valid.length > 1;
+    if (valid.length !== selection.length || tooMany)
       $("form-message").textContent =
         "Some files were skipped. Check the supported formats and size limits.";
     files[kind] =
@@ -409,28 +424,35 @@ if (page === "new") {
       return;
     }
     const data = readDraft();
-    const url = new URL(data.url);
+    if (!data.steps.trim() && !files.shots.length && !files.video.length) {
+      $("form-message").textContent = "Add written steps, screenshots or a recording so Navgent can read the evidence.";
+      return;
+    }
+    let url;
+    try {
+      url = new URL(data.url);
+    } catch {
+      $("form-message").textContent = "Use a valid http or https app URL.";
+      return;
+    }
     if (!["http:", "https:"].includes(url.protocol)) {
       $("form-message").textContent = "Use an http or https app URL.";
       return;
     }
-    data.title =
-      data.steps
-        .split("\n")
-        .find((x) => x.trim())
-        ?.replace(/^\d+[.)]\s*/, "")
-        .slice(0, 140) || "Reproduction";
-    data.instruction =
-      "Reproduce the described behavior on the supplied URL. Follow the written steps and compare observed behavior with expected behavior. Report what you actually observe and any blockers. User-reported actual behavior is a claim to verify. Do not claim screenshots, recordings, network logs, or multiple attempts unless actually performed.";
+    const body = new FormData();
+    body.set("target_url", data.url);
+    body.set("expected", data.expected);
+    body.set("actual", data.actual);
+    body.set("steps_text", data.steps);
+    body.set("max_runtime_seconds", "600");
+    for (const file of files.shots) body.append("screenshots", file);
+    for (const file of files.video) body.append("video", file);
     $("start-run").disabled = true;
-    $("form-message").textContent = "";
+    $("form-message").textContent = "Uploading evidence…";
     try {
-      const result = await api("/api/runs", {
+      const result = await api("/api/reproductions", {
         method: "POST",
-        body: JSON.stringify({
-          task: JSON.stringify(data),
-          max_runtime_seconds: 600,
-        }),
+        body,
       });
       try {
         sessionStorage.setItem("reprobe.last-run", result.run.id);
@@ -447,27 +469,71 @@ if (page === "new") {
 if (page === "reports") history();
 const cartMarkup =
   '<div class="demo-cart"><div class="cart-head"><b>northwind supply</b><span>Cart (1)</span></div><div class="cart-content"><div><h2>Your cart</h2><div class="cart-product"><span>Trail Pack 30L<br>Moss · qty 1</span><b>$60.00</b></div></div><div><h2>Summary</h2><div class="cart-product"><span>Subtotal</span><span>$60.00</span></div><div class="cart-product"><span>SAVE50</span><span>−$30.00</span></div><div class="cart-total"><b>Total</b><b class="bad">$42.00</b></div></div></div></div>';
-function renderPlan(todos) {
-  $("plan").replaceChildren();
-  $("plan-title").textContent =
-    `Plan · ${todos.filter((x) => x.status === "completed").length} of ${todos.length}`;
+function renderPlan(todos, hostId = "plan", titleId = "plan-title", heading = "Plan") {
+  $(hostId).replaceChildren();
+  $(titleId).textContent = heading === "Evidence plan"
+    ? `${heading} · ${todos.length} steps`
+    : `${heading} · ${todos.filter((x) => x.status === "completed").length} of ${todos.length}`;
   todos.forEach((todo, i) => {
     const button = node("button", undefined, "plan-item");
     button.type = "button";
+    const copy = node("span", todo.content, "plan-copy");
+    if (todo.source) copy.append(node("small", todo.source, "plan-source"));
     button.append(
       node("span", String(i + 1).padStart(2, "0"), "mono"),
-      node("span", todo.content),
-      node("small", todo.status.replaceAll("_", " ")),
+      copy,
     );
+    if (!todo.source) button.append(node("small", todo.status.replaceAll("_", " ")));
     button.onclick = () => {
-      for (const b of $("plan").children) b.classList.remove("selected");
+      for (const b of $(hostId).children) b.classList.remove("selected");
       button.classList.add("selected");
       $("step-heading").textContent = "Step " + (i + 1);
       $("step-detail").textContent =
-        todo.content + " · " + todo.status.replaceAll("_", " ") + ".";
+        todo.content + " · " + (todo.source || todo.status.replaceAll("_", " ")) + ".";
     };
-    $("plan").append(button);
+    $(hostId).append(button);
   });
+}
+function renderEvidencePlan(brief) {
+  const steps = brief.steps.map((step) => ({
+    content: step.instruction, source: step.source, status: "pending",
+  }));
+  renderPlan(steps, "plan", "plan-title", "Evidence plan");
+}
+function renderReportBrief(run) {
+  const brief = run.repro_brief;
+  if (brief) {
+    $("report-brief").hidden = false;
+    $("report-assertion").hidden = false;
+    for (const step of brief.steps) {
+      const item = node("li");
+      item.append(node("p", step.instruction), node("small", step.source));
+      $("report-steps").append(item);
+    }
+    $("assertion-check").textContent = brief.assertion.check;
+    $("assertion-look-in").textContent = { page: "Page", network: "Network", console: "Console" }[brief.assertion.look_in];
+    $("report-expected").textContent = brief.assertion.expected;
+    $("report-actual").textContent = brief.assertion.reported_actual;
+    for (const unknown of brief.unknowns) $("report-unknowns").append(node("li", unknown));
+    if (!brief.unknowns.length) $("report-unknowns").replaceWith(node("p", "No unknowns were identified in the submitted evidence.", "muted"));
+  }
+  if (run.evidence_frames?.length) {
+    $("key-frames-section").hidden = false;
+    run.evidence_frames.forEach((frame, i) => {
+      const figure = node("figure");
+      const link = node("a");
+      link.href = `/api/runs/${run.id}/evidence/${i + 1}.jpg`;
+      link.target = "_blank";
+      link.rel = "noopener";
+      const img = node("img");
+      img.src = link.href;
+      img.loading = "lazy";
+      img.alt = `Submitted evidence: ${frame.label}`;
+      link.append(img);
+      figure.append(link, node("figcaption", frame.label));
+      $("key-frames").append(figure);
+    });
+  }
 }
 function eventDescription(event) {
   const p = event.payload || {};
@@ -485,6 +551,8 @@ function eventDescription(event) {
     "browser.observation": "Observed page",
     "browser.frame.changed": "Frame changed",
     "run.created": "Run created",
+    "evidence.ready": "Evidence plan ready",
+    "evidence.failed": "Couldn't read the evidence",
     "run.completed": "Run output saved",
     "run.failed": "Run failed",
     "run.cancelled": "Run stopped",
@@ -539,11 +607,23 @@ if (page === "live") {
     frameTimer = null,
     frameUrl = null,
     latestRequest = null,
+    brief = null,
+    evidenceFailed = false,
     started = Date.now();
   const seen = new Set();
   function setStatus(status) {
-    $("run-status").textContent = labels[status] || status;
+    $("run-status").textContent = evidenceFailed && status === "failed"
+      ? "Couldn't read the evidence"
+      : labels[status] || status;
     $("run-dot").className = "dot " + status;
+    if (status === "reading_evidence") {
+      $("feed-label").textContent = "READING EVIDENCE";
+      $("screen-waiting").textContent = "Reading your evidence before starting the browser. This usually takes a few seconds, up to 30 seconds.";
+      $("latest-action").textContent = "Building a plan from your evidence";
+    } else if (status === "running") {
+      $("feed-label").textContent = "LIVE";
+      $("screen-waiting").textContent = "The browser is starting. The first frame will appear here.";
+    }
     if (terminal.has(status)) {
       stopped = true;
       clearTimeout(frameTimer);
@@ -553,6 +633,14 @@ if (page === "live") {
       $("view-report").hidden = false;
       $("view-report").href = "/app/reports/" + runId;
       $("feed-label").textContent = "FINAL FRAME";
+      if (evidenceFailed) {
+        $("feed-label").textContent = "EVIDENCE ERROR";
+        $("screen-waiting").textContent = "The evidence could not be read. Check your files and steps, then start a new reproduction.";
+        $("latest-action").textContent = "The browser did not start";
+        $("plan").replaceChildren(node("p", "No plan was created because the evidence could not be read.", "muted"));
+        document.querySelector(".step-detail").hidden = true;
+        if (!source) $("activity").replaceChildren(node("p", "No browser actions were run.", "muted"));
+      }
       refreshFrame();
     }
   }
@@ -584,9 +672,19 @@ if (page === "live") {
     if (seen.has(event.sequence)) return;
     seen.add(event.sequence);
     if (event.event_type === "task.todos") {
-      renderPlan(event.payload.todos || []);
+      if (brief) {
+        $("execution-section").hidden = false;
+        renderPlan(event.payload.todos || [], "execution-plan", "execution-title", "Browser progress");
+      } else renderPlan(event.payload.todos || []);
       return;
     }
+    if (event.event_type === "evidence.ready") {
+      brief = event.payload.brief;
+      renderEvidencePlan(brief);
+    }
+    if (event.event_type === "evidence.failed") evidenceFailed = true;
+    if (event.event_type === "run.failed" || event.event_type === "evidence.failed")
+      $("run-message").textContent = event.payload.error;
     if (event.event_type === "agent.message.delta") {
       const host = $("agent-output");
       host.textContent = (host.textContent + (event.payload.text || "")).slice(
@@ -715,6 +813,10 @@ if (page === "live") {
     try {
       const response = await api("/api/runs/" + runId);
       const data = taskData(response.run.task);
+      brief = response.run.repro_brief;
+      if (brief) renderEvidencePlan(brief);
+      evidenceFailed = response.run.error?.startsWith("Couldn't read the evidence") || false;
+      $("run-message").textContent = response.run.error || "";
       $("run-id").textContent = shortId(runId);
       $("run-title").textContent = data.title;
       $("browser-url").textContent = data.url || "Browser";
@@ -725,6 +827,8 @@ if (page === "live") {
         source = new EventSource(response.stream_url);
         const types = [
           "run.created",
+          "evidence.ready",
+          "evidence.failed",
           "run.status",
           "task.todos",
           "browser.frame.changed",
@@ -818,6 +922,8 @@ if (page === "report") {
       const data = taskData(record.task);
       $("run-id").textContent = shortId(runId);
       $("run-status").textContent = labels[record.status] || record.status;
+      if (record.error?.startsWith("Couldn't read the evidence"))
+        $("run-status").textContent = "Couldn't read the evidence";
       $("run-dot").className = "dot " + record.status;
       $("report-title").textContent = data.title;
       $("report-description").textContent = terminal.has(record.status)
@@ -827,6 +933,7 @@ if (page === "report") {
         record.final_output || record.error || "No final output was captured.";
       $("report-expected").textContent = data.expected || "Not provided";
       $("report-actual").textContent = data.actual || "Not provided";
+      renderReportBrief(record);
       const rerun = $("rerun");
       if (terminal.has(record.status)) {
         rerun.onclick = async (event) => {
