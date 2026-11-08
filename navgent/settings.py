@@ -17,5 +17,6 @@ class AgentSettings:
     headless: bool = True
     browser_channel: str | None = None
     trace_path: Path | None = None
+    recording_dir: Path | None = None
     max_runtime_seconds: float = DEFAULT_MAX_RUNTIME_SECONDS
     sensitive_input_window_seconds: float = DEFAULT_SENSITIVE_INPUT_WINDOW_SECONDS

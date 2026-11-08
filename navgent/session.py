@@ -3,6 +3,7 @@ import logging
 import time
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import TracebackType
 from typing import Any, Self
 from uuid import UUID, uuid4
@@ -58,7 +59,9 @@ class BrowserAgentSession:
             raise ValueError("sensitive_input_window_seconds must be greater than 0")
         self._settings = settings
         self._browser_manager = BrowserManager(headless=settings.headless, channel=settings.browser_channel)
-        self._browser = BrowserSession(self._browser_manager, trace_path=settings.trace_path)
+        self._browser = BrowserSession(
+            self._browser_manager, trace_path=settings.trace_path, recording_dir=settings.recording_dir,
+        )
         self._sensitive_inputs = SensitiveInputChannel()
         if credential_provider:
             credential_provider = SelectedCredentialProvider(credential_provider, selected_credential_ids)
@@ -210,6 +213,10 @@ class BrowserAgentSession:
 
     def get_latest_frame(self) -> bytes | None:
         return self._latest_frame
+
+    @property
+    def recording_paths(self) -> list[Path]:
+        return list(self._browser.recording_paths)
 
     def events(self) -> AsyncIterator[AgentEvent]:
         return self._events()

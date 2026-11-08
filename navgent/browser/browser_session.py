@@ -5,7 +5,7 @@ from functools import cache
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from playwright.async_api import BrowserContext, Page
+from playwright.async_api import BrowserContext, Page, Video
 from playwright.async_api import Frame as PlaywrightFrame
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
@@ -33,9 +33,17 @@ logger = logging.getLogger(__name__)
 
 class BrowserSession:
 
-    def __init__(self, browser_manager: BrowserManager, trace_path: Path | None = None):
+    def __init__(
+            self,
+            browser_manager: BrowserManager,
+            trace_path: Path | None = None,
+            recording_dir: Path | None = None,
+    ):
         self._browser_manager = browser_manager
         self._trace_path = trace_path
+        self._recording_dir = recording_dir
+        self._videos: list[Video] = []
+        self.recording_paths: list[Path] = []
         self._context: BrowserContext | None = None
         self._page: Page | None = None
         self._iframe: PlaywrightFrame | None = None
@@ -68,12 +76,31 @@ class BrowserSession:
     async def _ensure_context(self) -> BrowserContext:
         if self._context is None:
             browser = await self._browser_manager.start()
-            self._context = await browser.new_context(
-                viewport={"width": VIEWPORT_WIDTH, "height": VIEWPORT_HEIGHT}
-            )
+            viewport = {"width": VIEWPORT_WIDTH, "height": VIEWPORT_HEIGHT}
+            options = {"viewport": viewport}
+            if self._recording_dir is not None:
+                options["record_video_dir"] = str(self._recording_dir)
+                options["record_video_size"] = viewport
+            self._context = await browser.new_context(**options)
+            self._context.on("page", self._remember_video)
             if self._trace_path is not None:
                 await self._context.tracing.start(screenshots=False, snapshots=True)
         return self._context
+
+    def _remember_video(self, page: Page) -> None:
+        if page.video is not None:
+            self._videos.append(page.video)
+
+    async def _collect_recordings(self) -> None:
+        for video in self._videos:
+            try:
+                path = Path(await video.path())
+            except Exception:
+                logger.warning("Could not find a browser recording", exc_info=True)
+                continue
+            if path.exists() and path.stat().st_size > 0:
+                self.recording_paths.append(path)
+        self._videos = []
 
     async def _stop_trace(self) -> None:
         if self._trace_path is None or self._context is None:
@@ -453,6 +480,7 @@ class BrowserSession:
             await self._stop_trace()
             await self._context.close()
             self._context = None
+            await self._collect_recordings()
 
         self._reset_page_state()
         self._tabs.reset()

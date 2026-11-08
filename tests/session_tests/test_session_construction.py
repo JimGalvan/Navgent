@@ -23,11 +23,13 @@ class SessionConstructionTests(unittest.IsolatedAsyncioTestCase):
     def test_settings_build_the_browser_and_agent_inside_the_library(self):
         settings = AgentSettings(
             strong_model="anthropic:strong-model", fast_model="openai:fast-model", headless=False,
-            browser_channel="chrome", trace_path=Path("trace.zip"),
+            browser_channel="chrome", trace_path=Path("trace.zip"), recording_dir=Path("recording"),
         )
         session = BrowserAgentSession(settings)
         self.manager.assert_called_once_with(headless=False, channel="chrome")
-        self.browser.assert_called_once_with(self.manager.return_value, trace_path=settings.trace_path)
+        self.browser.assert_called_once_with(
+            self.manager.return_value, trace_path=settings.trace_path, recording_dir=settings.recording_dir,
+        )
         self.agent.assert_called_once_with(
             self.browser.return_value, session._sensitive_inputs, settings, credential_provider=None,
         )
