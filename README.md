@@ -118,6 +118,16 @@ Blocked requests aren't silent. When a page tries to load something from another
 - The firewall allows the target's IP, not its name. On shared hosting (SauceDemo is on GitHub Pages), a hand-built request to another site on the same IP could get through. With DNS off and Chromium's resolver rule, the browser can't make such a request by name.
 - For a site that needs a login, the agent types the test login into that site, as a person would. Reprobe's own keys never enter the sandbox.
 
+## Saved logins
+
+Apps that need a sign-in can use a saved test login, so nobody has to paste a password into a bug report.
+
+- **Saving.** Under Manage credentials you give a login a name and its allowed domains (`*.example.com` allows subdomains), then a login, password or contact details. Saved values stay hidden in the UI, even when you edit.
+- **Storage.** Each login is encrypted with AES-256-GCM before it reaches SQLite, and bound to its own record. The key (`REPROBE_CREDENTIAL_KEY`) is generated on the VM and kept in `/etc/reprobe/reprobe.env`, apart from the database. Deleting a login wipes its encrypted value.
+- **Selection.** The New screen only offers logins whose allowed domains match the app URL's host.
+- **During a run.** The agent only sees each login's name, allowed domains, a masked login hint and which fields exist, never a value. When a step needs one, `fill_credential` asks the app, which checks the run's target host and the login's allowed domains, then decrypts the value. Navgent types it only after confirming the field is on the target host and has focus, masks the field before typing, and leaves it out of later page reads and form snapshots.
+- **Afterwards.** Values are redacted from run events, and browser tracing is turned off for runs that use a saved login. No stored secret is ever placed in the sandbox: the value only reaches it as keystrokes into the target site's own field.
+
 ## Repository layout
 
 ```text
