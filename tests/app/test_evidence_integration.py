@@ -19,7 +19,13 @@ from app.runs.repository import RunRepository
 from app.runs.service import RunManager
 from app.server import routes
 from navgent import ReproductionVerdictEvent
-from navgent.events import RunCompletedEvent, SessionStatusEvent
+from navgent.events import (
+    BrowserActionCompletedEvent,
+    BrowserActionFailedEvent,
+    BrowserActionStartedEvent,
+    RunCompletedEvent,
+    SessionStatusEvent,
+)
 from navgent.evidence import Assertion, ReproBrief, ReproStep
 
 BRIEF = ReproBrief(
@@ -547,3 +553,31 @@ def test_report_is_ready_on_the_first_terminal_response(client):
         client.scenario.allow_close.set()
     assert finish_run(client, run_id)["recordings"] == ["tab.webm"]
     assert client.http.get(f"/api/runs/{run_id}/recordings/1.webm").content == b"finished video"
+
+
+def test_rich_actions_round_trip_through_saved_events_and_stream(client):
+    client.scenario.events = [
+        BrowserActionStartedEvent("type", "Last Name", "Tester", "Check the last-name field.", 2),
+        BrowserActionCompletedEvent("type", "Last Name", "Tester", "Check the last-name field.", 2,
+                                    ("First Name: r", "Last Name: (empty)")),
+        BrowserActionFailedEvent("click", "Continue", "Last Name is required", reason="Submit the form.", brief_step=2),
+        BrowserActionCompletedEvent("type", "Password", value="", fields=("First Name: r",)),
+    ]
+    run_id = create_run(client)
+    finish_run(client, run_id)
+    saved = client.http.get(f"/api/runs/{run_id}/events")
+    assert saved.status_code == 200
+    actions = [event for event in saved.json() if event["event_type"].startswith("browser.action.")]
+    assert len(actions) == 4
+    assert actions[0]["payload"] == dict(action="type", target="Last Name", value="Tester",
+                                        reason="Check the last-name field.", brief_step=2)
+    assert actions[1]["payload"]["fields"] == ["First Name: r", "Last Name: (empty)"]
+    assert actions[2]["payload"]["error"] == "Last Name is required"
+    assert actions[3]["payload"]["value"] == ""
+    persisted = client.repository.list_events(UUID(run_id))
+    stored = next(event for event in persisted if event.event_type == "browser.action.completed")
+    assert isinstance(stored.payload["fields"], list)
+    stream = client.http.get(f"/api/runs/{run_id}/stream").text
+    assert json.dumps(actions[1]["payload"]) in stream
+    client.user.id = uuid4()
+    assert client.http.get(f"/api/runs/{run_id}/events").status_code == 404

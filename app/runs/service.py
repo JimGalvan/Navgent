@@ -491,6 +491,10 @@ class RunManager:
         _, run = self._resolve_owned(run_id, user_id)
         return run
 
+    def get_events(self, run_id: UUID, user_id: UUID) -> list[RunEvent]:
+        self._resolve_owned(run_id, user_id)
+        return self._repository.list_events(run_id)
+
     def get_evidence_frame(self, run_id: UUID, user_id: UUID, number: int) -> Path:
         _, run = self._resolve_owned(run_id, user_id)
         path = self._evidence.frame_path(run, number)

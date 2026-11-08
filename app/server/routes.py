@@ -344,6 +344,11 @@ async def get_recording(run_id: UUID, number: int, user: CurrentUser) -> FileRes
     return FileResponse(path, media_type="video/webm", headers=NO_CACHE_HEADERS)
 
 
+@app.get("/api/runs/{run_id}/events", response_model=list[RunEvent])
+async def get_run_events(run_id: UUID, user: CurrentUser) -> list[RunEvent]:
+    return await run_in_threadpool(run_manager.get_events, run_id, user.id)
+
+
 @app.get("/api/runs/{run_id}/stream")
 async def stream_run_events(
     run_id: UUID,
