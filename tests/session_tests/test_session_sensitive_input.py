@@ -10,6 +10,7 @@ from langchain_core.tools import tool
 from langgraph.types import interrupt
 
 from navgent import constants
+from navgent.browser.recording import PerformedClick
 from navgent.exceptions import (
     SensitiveInputNotPendingError,
     SessionNotWaitingForInputError,
@@ -62,6 +63,23 @@ class SessionSensitiveInputTests(unittest.IsolatedAsyncioTestCase):
         browser.fill_sensitive.assert_awaited_once_with(8, "123456", None)
         state = await session._runtime.agent.aget_state(session._runtime.config)
         self.assertNotIn("123456", str(state.values))
+
+    async def test_the_click_that_submits_the_code_is_reported_without_the_code(self):
+        session, browser, events, request = await self.park(submit_element_index=12)
+
+        async def fill(element_index, value, submit_element_index):
+            browser.performed_clicks.append(PerformedClick(300, 400, 1365, 768, 9_000.0, "rec1", 4_000.0))
+            return "Filled element [8] and clicked element [12] to submit it"
+
+        browser.fill_sensitive.side_effect = fill
+        await session.submit_sensitive_input(request.request_id, "123456")
+        click = await next_event(events, "browser.click")
+        await ready(session, events)
+        self.assertEqual(click.action, "request_mfa_code")
+        self.assertIsNone(click.brief_step)
+        self.assertEqual((click.x, click.y, click.recording_id, click.recording_time_ms), (300, 400, "rec1", 4_000.0))
+        self.assertNotIn("123456", str(asdict(click)))
+        self.assertEqual(browser.performed_clicks, [])
 
     async def test_the_code_is_sent_rather_than_left_in_the_field(self):
         session, browser, events, request = await self.park(submit_element_index=12)

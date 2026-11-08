@@ -24,12 +24,18 @@ class FakeBrowser:
         self.close = AsyncMock()
         self.capture_screen_frame = AsyncMock(return_value=b"jpeg-frame")
         self.fill_sensitive = AsyncMock(return_value="Filled element [8] and submitted it")
+        self.performed_clicks = []
         self.user_click = AsyncMock(return_value="Clicked")
         self.user_mouse_down = AsyncMock(return_value="Held")
         self.user_mouse_up = AsyncMock(return_value="Released")
         self.user_scroll = AsyncMock(return_value="Scrolled")
         self.user_key = AsyncMock(return_value="Pressed Enter")
         self.user_text = AsyncMock(return_value="Typed text")
+
+    def take_performed_clicks(self):
+        clicks = self.performed_clicks
+        self.performed_clicks = []
+        return clicks
 
 
 @tool

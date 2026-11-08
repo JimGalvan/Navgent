@@ -50,6 +50,9 @@ class ObservedBrowser:
     async def get_form_values(self):
         return ["Email: standard"]
 
+    def take_performed_clicks(self):
+        return []
+
 
 class SecureBrowserStepTests(unittest.TestCase):
     def setUp(self) -> None:

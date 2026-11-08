@@ -22,6 +22,15 @@ class PageTextBrowser:
     async def get_form_values(self) -> list[str]:
         return self.form_values
 
+    async def locate_quote(self, quote: str) -> None:
+        return None
+
+    def viewport_size(self) -> tuple[int, int]:
+        return 1365, 768
+
+    def current_recording(self) -> None:
+        return None
+
 
 class CheckObservedTests(unittest.TestCase):
     def test_value_matches_regardless_of_spacing(self) -> None:
@@ -71,13 +80,17 @@ class ReportVerdictToolTests(unittest.IsolatedAsyncioTestCase):
             "reason": "The confirmation lowercases the picked size.",
         })
         self.assertEqual(result, "Verdict recorded. Finish with a one-line summary.")
-        self.assertEqual(self.events, [("reproduction.verdict", {
+        self.assertEqual(len(self.events), 1)
+        event_type, payload = self.events[0]
+        self.assertEqual(event_type, "reproduction.verdict")
+        self.assertRegex(payload.pop("verdict_id"), "^[0-9a-f]{32}$")
+        self.assertEqual(payload, {
             "verdict": "reproduced",
             "expected": "size Large",
             "observed": "size large",
             "step_number": 6,
             "reason": "The confirmation lowercases the picked size.",
-        })])
+        })
 
     async def test_verdict_with_an_unseen_value_is_rejected(self) -> None:
         result = await self.tool.ainvoke({
@@ -145,3 +158,4 @@ class VerdictEventTests(unittest.TestCase):
             "reason": "Lowercased.",
         })
         self.assertEqual(event, ReproductionVerdictEvent("reproduced", "size Large", "size large", None, "Lowercased."))
+        self.assertEqual(event.verdict_id, "")

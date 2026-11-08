@@ -28,6 +28,9 @@ class ObservedBrowser:
     async def fill(self, element_index, value):
         self.fills.append((element_index, value))
 
+    def take_performed_clicks(self):
+        return []
+
 
 class InMemoryCredentialProvider:
     def __init__(self, metadata, secrets):

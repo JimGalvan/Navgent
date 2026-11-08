@@ -64,6 +64,9 @@ class FormBrowser:
     async def wait_for_page_to_settle(self):
         return self.page.url
 
+    def take_performed_clicks(self):
+        return []
+
 
 class ReproductionStepTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
