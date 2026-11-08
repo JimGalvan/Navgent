@@ -20,6 +20,7 @@ from navgent.browser.constants import (
     LOAD_TIMEOUT_MS,
     OBSERVE_ATTEMPTS,
     SCAN_BUDGET_SECONDS,
+    TYPING_DELAY_MS,
     VIEWPORT_HEIGHT,
     VIEWPORT_WIDTH,
 )
@@ -322,6 +323,18 @@ class BrowserSession:
             self._active_frame(), self._get_script("get-page-text.js")
         )
 
+    async def get_form_values(self) -> list[str]:
+        fields = await evaluate_with_timeout(
+            self._active_frame(), self._get_script("get-form-values.js")
+        )
+        lines = []
+        for field in fields:
+            value = field["value"].strip()
+            if not value:
+                value = "(empty)"
+            lines.append(f"{field['label']}: {value}")
+        return lines
+
     async def scroll(self, pages: float) -> str:
         position = await evaluate_with_timeout(
             self._active_frame(),
@@ -378,6 +391,12 @@ class BrowserSession:
         await self.page.keyboard.press("Control+A")
         await self.page.keyboard.insert_text(value)
         return f"Filled {self._describe_element(element_index)}"
+
+    async def type_text(self, element_index: int, value: str) -> str:
+        await self._click_element(element_index)
+        await self.page.keyboard.press("Control+A")
+        await self.page.keyboard.type(value, delay=TYPING_DELAY_MS)
+        return f"Typed into {self._describe_element(element_index)}"
 
     async def fill_sensitive(
             self, element_index: int, value: str, submit_element_index: int | None = None
