@@ -63,6 +63,7 @@ export function mountCredentials(api, preview) {
     get("credential-retry").disabled = value;
     get("start-run").disabled = value;
     manage.disabled = value || preview;
+    get("credential-add").disabled = value || preview;
     for (const button of get("credential-list").querySelectorAll("button")) {
       button.disabled = value;
     }
@@ -170,6 +171,12 @@ export function mountCredentials(api, preview) {
     }
   }
 
+  function showEditor(visible) {
+    get("credential-editor-view").hidden = !visible;
+    get("credential-list").hidden = visible;
+    get("credential-add").hidden = visible;
+  }
+
   function resetForm() {
     editingId = null;
     form.reset();
@@ -181,7 +188,8 @@ export function mountCredentials(api, preview) {
     get("credential-remove-options").replaceChildren();
     get("credential-editor-heading").textContent = "Add a credential";
     get("credential-save").textContent = "Save credential";
-    get("credential-cancel").hidden = true;
+    get("credential-cancel").hidden = false;
+    showEditor(false);
     form.querySelector("details").open = false;
     fallback.disabled = true;
     showMessage("");
@@ -189,6 +197,7 @@ export function mountCredentials(api, preview) {
 
   function editCredential(credential) {
     resetForm();
+    showEditor(true);
     editingId = credential.id;
     get("credential-name").value = credential.name;
     get("credential-domains").value = credential.allowed_domains.join(", ");
@@ -239,23 +248,37 @@ export function mountCredentials(api, preview) {
     } finally {
       setBusy(false);
     }
-    if (deleted) get("credential-name").focus();
+    if (deleted) get("credential-add").focus();
   }
 
-  manage.addEventListener("click", () => {
-    manager.hidden = false;
-    manage.setAttribute("aria-expanded", "true");
-    get("credential-name").focus();
-  });
-  get("credential-close").addEventListener("click", () => {
+  function closeManager() {
+    if (busy) return;
+    manager.close();
     manager.hidden = true;
     manage.setAttribute("aria-expanded", "false");
     resetForm();
     manage.focus();
+  }
+  manage.addEventListener("click", () => {
+    resetForm();
+    manager.hidden = false;
+    manager.showModal();
+    manage.setAttribute("aria-expanded", "true");
+    get("credential-close").focus();
+  });
+  manager.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeManager();
+  });
+  get("credential-close").addEventListener("click", closeManager);
+  get("credential-add").addEventListener("click", () => {
+    resetForm();
+    showEditor(true);
+    get("credential-name").focus();
   });
   get("credential-cancel").addEventListener("click", () => {
     resetForm();
-    get("credential-name").focus();
+    get("credential-add").focus();
   });
   verification.addEventListener("change", () => {
     fallback.disabled = !verification.value;

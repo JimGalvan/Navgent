@@ -149,9 +149,10 @@ function showHistory(runs) {
     );
     return;
   }
-  for (const run of runs) {
+  for (const run of page === "new" ? runs.slice(0, 3) : runs) {
     const d = taskData(run.task);
     const a = node("a", undefined, "history-row");
+    a.title = d.title;
     a.href = preview
       ? "/preview/" + (run.status === "running" ? "live" : "report")
       : `/app/${terminal.has(run.status) ? "reports" : "runs"}/${run.id}`;

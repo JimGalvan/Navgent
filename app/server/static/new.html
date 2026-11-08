@@ -16,43 +16,20 @@
       ><a href="/preview/new">New</a><a href="/preview/live">Live</a
       ><a href="/preview/report">Report</a>
     </div>
-    <main class="narrow">
+    <main class="narrow reproduction-page">
       <div class="intro">
         <h1>Show the bug. Get the proof.</h1>
-        <p class="muted">Add steps, screenshots or a recording to reproduce the bug.</p>
+        <p class="muted">Provide the details Reprobe needs to reproduce your issue.</p>
       </div>
-      <form id="reproduction-form">
+      <form id="reproduction-form" class="reproduction-layout">
+        <section class="bug-panel">
         <section class="section">
-          <h2 class="section-title">Evidence</h2>
-          <p id="evidence-help" class="notice">Provide at least one: written steps, screenshots, or a recording.</p>
+          <h2 class="section-title">Bug details</h2>
+          <p id="evidence-help" class="notice">Add steps, screenshots, or a recording (at least one required).</p>
           <p id="evidence-error" class="message" role="status" hidden></p>
           <div class="field">
-            <label for="steps">Steps <span class="optional">Optional</span></label>
+            <label for="steps">Steps to reproduce</label>
             <textarea id="steps" rows="4" maxlength="6000" aria-describedby="evidence-help evidence-error" placeholder="1. Open the cart page&#10;2. Apply the discount&#10;3. Remove one item&#10;4. Check the total"></textarea>
-          </div>
-          <div class="two-col uploads">
-            <div>
-              <label class="upload-label" for="shot-files">Screenshots <span class="optional">Optional</span></label>
-              <div class="drop" data-drop="shots">
-                <label for="shot-files">Drop images or <span class="upload-link">browse</span></label>
-                <p class="muted">Up to 10 images · 10 MB each</p>
-                <input id="shot-files" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/tiff,.tif,.tiff" multiple class="file-input" aria-describedby="evidence-help evidence-error" />
-              </div>
-            </div>
-            <div>
-              <label class="upload-label" for="video-files">Video <span class="optional">Optional</span></label>
-              <div class="drop" data-drop="video">
-                <label for="video-files">Drop a recording or <span class="upload-link">browse</span></label>
-                <p class="muted">MP4, WebM, MOV · 2 min · 50 MB</p>
-                <input id="video-files" type="file" accept="video/mp4,video/webm,video/quicktime" class="file-input" aria-describedby="evidence-help evidence-error" />
-              </div>
-            </div>
-          </div>
-          <div id="file-list" class="file-list"></div>
-          <p id="media-note" class="notice" hidden></p>
-          <div class="field">
-            <label for="target-url">App URL</label>
-            <input class="mono" id="target-url" type="url" required placeholder="https://staging.your-app.com" maxlength="1000" />
           </div>
           <div class="two-col">
             <div class="field">
@@ -65,6 +42,35 @@
             </div>
           </div>
         </section>
+        <section class="attachments"><h2 class="section-title">Attachments</h2>
+          <div class="two-col uploads">
+            <div>
+              <label class="upload-label" for="shot-files">Screenshots</label>
+              <div class="drop" data-drop="shots">
+                <label for="shot-files">Drop images or <span class="upload-link">browse</span></label>
+                <p class="muted">Up to 10 images · 10 MB each</p>
+                <input id="shot-files" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/tiff,.tif,.tiff" multiple class="file-input" aria-describedby="evidence-help evidence-error" />
+              </div>
+            </div>
+            <div>
+              <label class="upload-label" for="video-files">Recording</label>
+              <div class="drop" data-drop="video">
+                <label for="video-files">Drop a recording or <span class="upload-link">browse</span></label>
+                <p class="muted">MP4, WebM, MOV · 2 min · 50 MB</p>
+                <input id="video-files" type="file" accept="video/mp4,video/webm,video/quicktime" class="file-input" aria-describedby="evidence-help evidence-error" />
+              </div>
+            </div>
+          </div>
+          <div id="file-list" class="file-list"></div>
+          <p id="media-note" class="notice" hidden></p>
+        </section>
+        </section>
+        <section class="run-panel" aria-labelledby="run-setup-heading">
+          <h2 id="run-setup-heading" class="section-title">Run setup</h2>
+          <div class="field">
+            <label for="target-url">App URL</label>
+            <input class="mono" id="target-url" type="url" required placeholder="https://staging.your-app.com" maxlength="1000" />
+          </div>
         <section class="section credential-section" aria-labelledby="credentials-heading">
           <div class="credential-heading">
             <h2 id="credentials-heading">Credentials <span class="optional">Optional</span></h2>
@@ -82,14 +88,17 @@
           <button class="button" id="start-run" type="submit">Start reproduction</button>
         </div>
         <p id="form-message" class="message" role="status"></p>
+        </section>
       </form>
-      <section id="credential-manager" class="section credential-manager" aria-labelledby="credential-manager-heading" hidden>
+      <dialog id="credential-manager" class="credential-manager" aria-labelledby="credential-manager-heading" hidden>
         <div class="credential-heading">
           <h2 id="credential-manager-heading">Manage credentials</h2>
           <button id="credential-close" class="text-button" type="button">Close</button>
         </div>
-        <p class="notice">Save a login, password, or contact details. Saved values stay hidden when you edit.</p>
+        <p class="notice">Securely save accounts for browser reproductions. Saved values stay hidden when you edit.</p>
         <ul id="credential-list" class="credential-list" aria-label="Saved credentials"></ul>
+        <button id="credential-add" class="button secondary" type="button">Add credential</button>
+        <div id="credential-editor-view" hidden>
         <h3 id="credential-editor-heading">Add a credential</h3>
         <form id="credential-form">
           <fieldset id="credential-editor" class="credential-editor">
@@ -115,7 +124,8 @@
               </div>
             </div>
             <details class="credential-contact">
-              <summary>Contact details <span class="optional">Optional</span></summary>
+              <summary>Advanced options</summary>
+              <h4>Contact details</h4>
               <div class="two-col">
                 <div class="field">
                   <label for="credential-email">Email</label>
@@ -134,7 +144,6 @@
                   <input id="credential-last-name" maxlength="100" autocomplete="off" />
                 </div>
               </div>
-            </details>
             <fieldset id="credential-remove" class="credential-remove" hidden>
               <legend>Remove saved fields</legend>
               <p class="notice">Leave fields above blank to keep their saved values, or select fields below to remove them.</p>
@@ -164,17 +173,19 @@
                 </select>
               </div>
             </div>
+            </details>
             <label class="credential-check"><input id="credential-default" type="checkbox" />Preselect for new runs</label>
             <div class="credential-form-actions">
               <button id="credential-save" class="button secondary" type="submit">Save credential</button>
               <button id="credential-cancel" class="text-button" type="button" hidden>Cancel edit</button>
             </div>
           </fieldset>
-          <p id="credential-message" class="message" role="status"></p>
         </form>
-      </section>
+        </div>
+        <p id="credential-message" class="message" role="status"></p>
+      </dialog>
       <section class="section">
-        <h2 class="section-title">Recent</h2>
+        <div class="recent-heading"><h2 class="section-title">Recent runs</h2><a href="/app/reports">View all</a></div>
         <div id="history"><p class="empty">Loading your runs…</p></div>
       </section>
     </main>

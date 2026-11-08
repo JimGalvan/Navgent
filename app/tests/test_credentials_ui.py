@@ -123,7 +123,10 @@ def capture(surface, name):
     page.evaluate("document.fonts.ready")
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     CAPTURES.mkdir(parents=True, exist_ok=True)
-    page.screenshot(path=CAPTURES / f"{name}-{surface.width}.png", full_page=True)
+    page.screenshot(
+        path=CAPTURES / f"{name}-{surface.width}.png",
+        full_page=not page.locator("#credential-manager").is_visible(),
+    )
 
 
 def test_default_selection_is_sent_with_reproduction(surface):
@@ -153,6 +156,8 @@ def test_default_selection_is_sent_with_reproduction(surface):
 def test_create_edit_remove_fields_and_close_clear_secret_inputs(surface):
     open_manager(surface)
     page = surface.page
+    expect(page.locator("#credential-form")).to_be_hidden()
+    page.get_by_role("button", name="Add credential", exact=True).click()
     page.locator("#credential-name").fill("Checkout contact")
     page.locator("#credential-domains").fill("staging.example.test, *.example.test")
     page.locator("#credential-password").fill("  saved password  ")
@@ -186,6 +191,7 @@ def test_create_edit_remove_fields_and_close_clear_secret_inputs(surface):
     assert updated["first_name"] is None
     assert "password" not in updated
     assert "email" not in updated
+    page.get_by_role("button", name="Add credential", exact=True).click()
     page.locator("#credential-password").fill("unsaved password")
     capture(surface, "manager")
     page.get_by_role("button", name="Close", exact=True).click()
@@ -206,7 +212,7 @@ def test_delete_revokes_selection_and_cancel_preserves_it(surface):
     page.once("dialog", lambda dialog: dialog.accept())
     page.get_by_role("button", name="Delete Staging account").click()
     expect(page.locator("#credential-message")).to_have_text("Credential deleted.")
-    expect(page.locator("#credential-name")).to_be_focused()
+    expect(page.locator("#credential-add")).to_be_focused()
     expect(page.locator("#credential-picker").get_by_role("checkbox", name="Staging account")).to_have_count(0)
     assert surface.writes[-1] == ("DELETE", f"/api/credentials/{DEFAULT_ID}", None)
 
@@ -221,6 +227,7 @@ def test_empty_state_and_unavailable_storage_can_be_retried(surface):
     page.get_by_role("button", name="Retry loading credentials").click()
     expect(page.locator("#credential-picker")).to_contain_text("No saved credentials")
     page.get_by_role("button", name="Manage credentials", exact=True).click()
+    page.get_by_role("button", name="Add credential", exact=True).click()
     page.locator("#credential-name").fill("Test account")
     page.locator("#credential-domains").fill("staging.example.test")
     page.get_by_role("button", name="Save credential", exact=True).click()
@@ -264,3 +271,20 @@ def test_picker_offers_only_credentials_matching_the_target_host(surface):
     expect(picker).to_contain_text("No saved credentials match")
     page.locator("#target-url").fill("https://www.staging.example.test")
     expect(picker.get_by_role("checkbox")).to_have_count(0)
+
+
+def test_drawer_starts_with_list_and_escape_returns_focus(surface):
+    open_manager(surface)
+    page = surface.page
+    expect(page.locator("#credential-list")).to_be_visible()
+    expect(page.locator("#credential-form")).to_be_hidden()
+    bounds = page.locator("#credential-manager").bounding_box()
+    assert bounds["y"] == 0
+    assert bounds["x"] + bounds["width"] == surface.width
+    capture(surface, "drawer-list")
+    page.get_by_role("button", name="Add credential", exact=True).click()
+    page.locator("#credential-password").fill("discard on escape")
+    page.keyboard.press("Escape")
+    expect(page.locator("#credential-manager")).to_be_hidden()
+    expect(page.locator("#credential-password")).to_have_value("")
+    expect(page.locator("#credential-manage")).to_be_focused()
