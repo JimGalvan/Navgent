@@ -9,6 +9,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from navgent.browser.constants import ASSET_HOSTS
+
 
 class SandboxError(RuntimeError):
     pass
@@ -19,6 +21,7 @@ class SandboxInfo(BaseModel):
     ws_endpoint: str
     runtime: str = Field(min_length=1, max_length=64)
     allowed_hosts: list[str]
+    asset_hosts: list[str] = Field(default_factory=list)
     limits: dict[str, float] = Field(default_factory=dict)
 
     def public(self) -> dict:
@@ -79,6 +82,7 @@ class SandboxController:
             if (endpoint.scheme not in {"ws", "wss"} or endpoint.hostname not in {"127.0.0.1", "localhost", "::1"}
                     or not endpoint.port or endpoint.username or endpoint.password
                     or info.allowed_hosts != [host]
+                    or any(asset_host not in ASSET_HOSTS for asset_host in info.asset_hosts)
                     or any(not math.isfinite(info.limits.get(key, 0)) or info.limits.get(key, 0) <= 0
                            for key in ("cpus", "memory_mb", "pids", "time_limit_seconds"))):
                 raise ValueError()

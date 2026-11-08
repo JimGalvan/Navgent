@@ -23,6 +23,7 @@ def build_agent_runtime(
         sensitive_input_window_seconds: float = constants.DEFAULT_SENSITIVE_INPUT_WINDOW_SECONDS,
         browser_ws_endpoint: str | None = None,
         allowed_hosts: tuple[str, ...] = (),
+        asset_hosts: tuple[str, ...] = (),
         credential_host: str | None = None,
 ) -> BrowserAgentSession:
     settings = replace(
@@ -32,6 +33,7 @@ def build_agent_runtime(
         sensitive_input_window_seconds=sensitive_input_window_seconds,
         browser_ws_endpoint=browser_ws_endpoint,
         allowed_hosts=allowed_hosts,
+        asset_hosts=asset_hosts,
     )
     if headless is not None:
         settings = replace(settings, headless=headless)
