@@ -16,6 +16,17 @@ class Bounds:
     left: float
 
 
+@dataclass(frozen=True)
+class Box:
+    x: float
+    y: float
+    width: float
+    height: float
+
+    def fits_inside(self, width: int, height: int) -> bool:
+        return self.x >= 0 and self.y >= 0 and self.x + self.width <= width and self.y + self.height <= height
+
+
 @dataclass
 class Viewport:
     width: int

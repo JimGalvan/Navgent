@@ -5,7 +5,7 @@ from functools import cache
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from playwright.async_api import BrowserContext, Page, Video
+from playwright.async_api import BrowserContext, Page
 from playwright.async_api import Frame as PlaywrightFrame
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
@@ -25,8 +25,14 @@ from navgent.browser.constants import (
     VIEWPORT_WIDTH,
 )
 from navgent.browser.element_factory import ElementFactory
-from navgent.browser.models import Element, Iframe, Observation, Tab, Viewport
+from navgent.browser.models import Box, Element, Iframe, Observation, Tab, Viewport
 from navgent.browser.page_content import PageContent
+from navgent.browser.recording import (
+    PageRecorder,
+    PerformedClick,
+    Recording,
+    wall_time_ms,
+)
 from navgent.browser.target_registry import TargetRegistry
 
 logger = logging.getLogger(__name__)
@@ -43,8 +49,11 @@ class BrowserSession:
         self._browser_manager = browser_manager
         self._trace_path = trace_path
         self._recording_dir = recording_dir
-        self._videos: list[Video] = []
+        self._recorders: list[PageRecorder] = []
+        self._recording_starts: list[asyncio.Task[None]] = []
+        self._performed_clicks: list[PerformedClick] = []
         self.recording_paths: list[Path] = []
+        self.recordings: list[Recording] = []
         self._context: BrowserContext | None = None
         self._page: Page | None = None
         self._iframe: PlaywrightFrame | None = None
@@ -78,30 +87,51 @@ class BrowserSession:
         if self._context is None:
             browser = await self._browser_manager.start()
             viewport = {"width": VIEWPORT_WIDTH, "height": VIEWPORT_HEIGHT}
-            options = {"viewport": viewport}
+            self._context = await browser.new_context(viewport=viewport)
             if self._recording_dir is not None:
-                options["record_video_dir"] = str(self._recording_dir)
-                options["record_video_size"] = viewport
-            self._context = await browser.new_context(**options)
-            self._context.on("page", self._remember_video)
+                self._context.on("page", self._start_recording)
             if self._trace_path is not None:
                 await self._context.tracing.start(screenshots=False, snapshots=True)
         return self._context
 
-    def _remember_video(self, page: Page) -> None:
-        if page.video is not None:
-            self._videos.append(page.video)
+    def _start_recording(self, page: Page) -> None:
+        recorder = PageRecorder(page, self._recording_dir, VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
+        self._recorders.append(recorder)
+        self._recording_starts.append(asyncio.create_task(recorder.start()))
 
-    async def _collect_recordings(self) -> None:
-        for video in self._videos:
-            try:
-                path = Path(await video.path())
-            except Exception:
-                logger.warning("Could not find a browser recording", exc_info=True)
-                continue
-            if path.exists() and path.stat().st_size > 0:
-                self.recording_paths.append(path)
-        self._videos = []
+    async def _wait_for_recordings_to_start(self) -> None:
+        starts = self._recording_starts
+        self._recording_starts = []
+        await asyncio.gather(*starts)
+
+    async def _finish_recordings(self) -> None:
+        await self._wait_for_recordings_to_start()
+        stops = []
+        for recorder in self._recorders:
+            stops.append(recorder.stop())
+        await asyncio.gather(*stops)
+        for recorder in self._recorders:
+            if recorder.path.exists() and recorder.path.stat().st_size > 0:
+                self.recording_paths.append(recorder.path)
+                self.recordings.append(recorder.describe())
+        self._recorders = []
+
+    def _recorder_for(self, page: Page) -> PageRecorder | None:
+        for recorder in self._recorders:
+            if recorder.page is page:
+                return recorder
+        return None
+
+    def current_recording(self) -> PageRecorder | None:
+        if not self.is_open:
+            return None
+        return self._recorder_for(self._page)
+
+    def viewport_size(self) -> tuple[int, int]:
+        size = self.page.viewport_size
+        if size is None:
+            return VIEWPORT_WIDTH, VIEWPORT_HEIGHT
+        return size["width"], size["height"]
 
     async def _stop_trace(self) -> None:
         if self._trace_path is None or self._context is None:
@@ -147,6 +177,7 @@ class BrowserSession:
 
         if not self.is_open:
             self._reset_page_state(await context.new_page())
+            await self._wait_for_recordings_to_start()
 
         await self._page.goto(url, timeout=LOAD_TIMEOUT_MS)
         self._reset_page_state(self._page)
@@ -323,17 +354,47 @@ class BrowserSession:
             self._active_frame(), self._get_script("get-page-text.js")
         )
 
-    async def get_form_values(self) -> list[str]:
-        fields = await evaluate_with_timeout(
+    async def _read_form_fields(self) -> list[dict]:
+        return await evaluate_with_timeout(
             self._active_frame(), self._get_script("get-form-values.js")
         )
+
+    @staticmethod
+    def _describe_form_field(field: dict) -> str:
+        value = field["value"].strip()
+        if not value:
+            value = "(empty)"
+        return f"{field['label']}: {value}"
+
+    async def get_form_values(self) -> list[str]:
         lines = []
-        for field in fields:
-            value = field["value"].strip()
-            if not value:
-                value = "(empty)"
-            lines.append(f"{field['label']}: {value}")
+        for field in await self._read_form_fields():
+            lines.append(self._describe_form_field(field))
         return lines
+
+    async def locate_quote(self, quote: str) -> Box | None:
+        """Return the on-screen box of a quote that appears exactly once, unhidden and uncovered."""
+        found = await evaluate_with_timeout(
+            self._active_frame(), self._get_script("locate-text.js"), quote
+        )
+        if not found:
+            found = await self._locate_form_field(quote)
+        if len(found) != 1 or not found[0]["unobscured"]:
+            return None
+
+        x, y = await self._page_coordinates(found[0]["x"], found[0]["y"])
+        box = Box(round(x, 1), round(y, 1), round(found[0]["width"], 1), round(found[0]["height"], 1))
+        if not box.fits_inside(*self.viewport_size()):
+            return None
+        return box
+
+    async def _locate_form_field(self, quote: str) -> list[dict]:
+        wanted = " ".join(quote.split())
+        found = []
+        for field in await self._read_form_fields():
+            if " ".join(self._describe_form_field(field).split()) == wanted:
+                found.append({**field["box"], "unobscured": True})
+        return found
 
     async def scroll(self, pages: float) -> str:
         position = await evaluate_with_timeout(
@@ -379,8 +440,31 @@ class BrowserSession:
         if element is None:
             raise ValueError(f"Element [{element_index}] is not available")
 
+        page = self.page
         horizontal, vertical = await self._page_coordinates(element.cx, element.cy)
-        await self.page.mouse.click(horizontal, vertical)
+        clicked_at = wall_time_ms()
+        await page.mouse.click(horizontal, vertical)
+        self._remember_click(page, horizontal, vertical, clicked_at)
+
+    def _remember_click(self, page: Page, horizontal: float, vertical: float, clicked_at: float) -> None:
+        size = page.viewport_size or {"width": VIEWPORT_WIDTH, "height": VIEWPORT_HEIGHT}
+        recorder = self._recorder_for(page)
+        recording_id = None
+        recording_time = None
+        if recorder is not None:
+            recording_id = recorder.id
+            recording_time = recorder.recording_time_ms(clicked_at)
+        self._performed_clicks.append(
+            PerformedClick(
+                horizontal, vertical, size["width"], size["height"], clicked_at, recording_id, recording_time,
+            )
+        )
+
+    def take_performed_clicks(self) -> list[PerformedClick]:
+        """Return the clicks dispatched since the last call, oldest first."""
+        clicks = self._performed_clicks
+        self._performed_clicks = []
+        return clicks
 
     async def click(self, element_index: int) -> str:
         await self._click_element(element_index)
@@ -497,9 +581,9 @@ class BrowserSession:
         """Close this session's context. The browser belongs to BrowserManager."""
         if self._context is not None:
             await self._stop_trace()
+            await self._finish_recordings()
             await self._context.close()
             self._context = None
-            await self._collect_recordings()
 
         self._reset_page_state()
         self._tabs.reset()

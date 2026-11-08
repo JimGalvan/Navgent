@@ -42,7 +42,12 @@
     if (SKIPPED_TYPES.includes(type) || !isVisible(control)) {
       continue;
     }
-    fields.push({ label: labelOf(control), value: valueOf(control, type) });
+    const box = control.getBoundingClientRect();
+    fields.push({
+      label: labelOf(control),
+      value: valueOf(control, type),
+      box: { x: box.left, y: box.top, width: box.width, height: box.height },
+    });
   }
   return fields;
 })()
