@@ -535,6 +535,43 @@ function renderReportBrief(run) {
     });
   }
 }
+const verdictLabels = {
+  reproduced: "Reproduced",
+  not_reproduced: "Not reproduced",
+  inconclusive: "Inconclusive",
+};
+function renderVerdict(verdict, brief) {
+  const host = $("verdict");
+  host.hidden = !verdict;
+  host.replaceChildren();
+  if (!verdict) return;
+  host.append(node("h2", verdictLabels[verdict.verdict]), node("p", verdict.reason));
+  const details = node("dl");
+  if (verdict.expected) details.append(node("dt", "Expected"), node("dd", verdict.expected));
+  if (verdict.observed) {
+    const style = verdict.verdict === "reproduced" ? "bad" : "";
+    details.append(node("dt", "Observed"), node("dd", verdict.observed, style));
+  }
+  const step = brief?.steps[verdict.step_number - 1];
+  if (verdict.verdict !== "not_reproduced" && step)
+    details.append(node("dt", "Step " + verdict.step_number), node("dd", step.instruction));
+  if (details.childElementCount) host.append(details);
+}
+function renderRecordings(run) {
+  const downloads = $("recording-downloads");
+  for (const [index] of (run.recordings || []).entries()) {
+    const number = index + 1;
+    const url = `/api/runs/${run.id}/recordings/${number}.webm`;
+    if (number === 1) {
+      $("recording-player").src = url;
+      $("recording-section").hidden = false;
+    }
+    const link = node("a", `WebM video · tab ${number}`, "download");
+    link.href = url;
+    link.download = `recording-${number}.webm`;
+    downloads.append(link);
+  }
+}
 function eventDescription(event) {
   const p = event.payload || {};
   if (
@@ -552,6 +589,7 @@ function eventDescription(event) {
     "browser.frame.changed": "Frame changed",
     "run.created": "Run created",
     "evidence.ready": "Evidence plan ready",
+    "reproduction.verdict": "Verdict reported",
     "evidence.failed": "Couldn't read the evidence",
     "run.completed": "Run output saved",
     "run.failed": "Run failed",
@@ -568,6 +606,7 @@ function eventDescription(event) {
   return {
     title: labels[event.event_type] || event.event_type.replaceAll(".", " "),
     detail:
+      verdictLabels[p.verdict] ||
       p.question ||
       p.target ||
       p.url ||
@@ -612,9 +651,7 @@ if (page === "live") {
     started = Date.now();
   const seen = new Set();
   function setStatus(status) {
-    $("run-status").textContent = evidenceFailed && status === "failed"
-      ? "Couldn't read the evidence"
-      : labels[status] || status;
+    $("run-status").textContent = labels[status] || status;
     $("run-dot").className = "dot " + status;
     if (status === "reading_evidence") {
       $("feed-label").textContent = "READING EVIDENCE";
@@ -683,6 +720,7 @@ if (page === "live") {
       renderEvidencePlan(brief);
     }
     if (event.event_type === "evidence.failed") evidenceFailed = true;
+    if (event.event_type === "reproduction.verdict") renderVerdict(event.payload, brief);
     if (event.event_type === "run.failed" || event.event_type === "evidence.failed")
       $("run-message").textContent = event.payload.error;
     if (event.event_type === "agent.message.delta") {
@@ -700,7 +738,10 @@ if (page === "live") {
         d.title + (d.detail ? " · " + d.detail : "");
     while (activity.children.length > 150) activity.firstElementChild.remove();
     activity.scrollTop = activity.scrollHeight;
-    if (event.event_type === "run.status") setStatus(event.payload.status);
+    if (event.event_type === "run.status") {
+      if (terminal.has(event.payload.status)) renderVerdict(event.payload.verdict, brief);
+      setStatus(event.payload.status);
+    }
     if (event.event_type === "browser.navigation.completed")
       $("browser-url").textContent = event.payload.url;
     if (
@@ -814,6 +855,7 @@ if (page === "live") {
       const response = await api("/api/runs/" + runId);
       const data = taskData(response.run.task);
       brief = response.run.repro_brief;
+      renderVerdict(response.run.verdict, brief);
       if (brief) renderEvidencePlan(brief);
       evidenceFailed = response.run.error?.startsWith("Couldn't read the evidence") || false;
       $("run-message").textContent = response.run.error || "";
@@ -828,6 +870,7 @@ if (page === "live") {
         const types = [
           "run.created",
           "evidence.ready",
+          "reproduction.verdict",
           "evidence.failed",
           "run.status",
           "task.todos",
@@ -905,8 +948,10 @@ if (page === "report") {
       "Sample result: the discount updated, but the displayed total remained stale. This is fictional preview data, not an executed run.";
     $("report-expected").textContent = sample.expected;
     $("report-actual").textContent = sample.actual;
-    $("verdict-note").textContent =
-      "Design preview only. This reproduction verdict is illustrative.";
+    renderVerdict({
+      verdict: "reproduced", expected: "$30.00", observed: "$42.00",
+      reason: "The displayed total stayed at $42.00 after removing the bottle.",
+    }, null);
     $("rerun").href = "/preview/new";
     samplePlan.forEach((title, i) =>
       appendEvent($("report-events"), {
@@ -922,13 +967,12 @@ if (page === "report") {
       const data = taskData(record.task);
       $("run-id").textContent = shortId(runId);
       $("run-status").textContent = labels[record.status] || record.status;
-      if (record.error?.startsWith("Couldn't read the evidence"))
-        $("run-status").textContent = "Couldn't read the evidence";
       $("run-dot").className = "dot " + record.status;
       $("report-title").textContent = data.title;
-      $("report-description").textContent = terminal.has(record.status)
-        ? "The saved browser run and available evidence. Reproduction verdict: not independently verified."
-        : "This run is still in progress. Open the live viewer to follow it.";
+      $("report-description").hidden = terminal.has(record.status);
+      $("report-description").textContent = "Open the live viewer to follow this run.";
+      renderVerdict(record.verdict, record.repro_brief);
+      renderRecordings(record);
       $("report-output").textContent =
         record.final_output || record.error || "No final output was captured.";
       $("report-expected").textContent = data.expected || "Not provided";

@@ -45,6 +45,17 @@ def browser():
         browser.close()
 
 
+@pytest.fixture(scope="module")
+def recorded_tab(browser, tmp_path_factory):
+    context = browser.new_context(record_video_dir=tmp_path_factory.mktemp("recorded-tab"))
+    tab = context.new_page()
+    tab.set_content("<h1>Cart total: $42.00</h1>")
+    tab.screenshot()
+    video = tab.video
+    context.close()
+    return video.path().read_bytes()
+
+
 @pytest.fixture(params=[1440, 390], ids=["desktop", "mobile"])
 def surface(browser, request):
     context = browser.new_context(viewport={"width": request.param, "height": 1000})
@@ -65,7 +76,7 @@ def surface(browser, request):
         "evidence_frames": [{"filename": "frame-01.jpg", "label": "screenshot 2"}, {"filename": "frame-02.jpg", "label": "video 00:07"}],
         "final_output": "The browser run finished. See the saved evidence for the result.",
     }
-    state = SimpleNamespace(run=record, uploads=[], frame=True)
+    state = SimpleNamespace(run=record, uploads=[], frame=True, video=None)
 
     def handle(route):
         path = urlsplit(route.request.url).path
@@ -81,6 +92,8 @@ def surface(browser, request):
             route.fulfill(json={"run": state.run, "stream_url": f"/api/runs/{RUN_ID}/stream", "screen_url": f"/api/runs/{RUN_ID}/screen.jpg"})
         elif path == f"/api/runs/{RUN_ID}/stream":
             route.fulfill(content_type="text/event-stream", body="")
+        elif "/recordings/" in path and state.video:
+            route.fulfill(content_type="video/webm", body=state.video)
         elif "/evidence/" in path or path.endswith("screen.jpg") and state.frame:
             route.fulfill(content_type="image/jpeg", body=evidence_image())
         elif path.endswith("screen.jpg"):
@@ -184,9 +197,66 @@ def test_failed_analysis_has_a_clear_state_on_reopening(surface):
     surface.state.run.update(status="failed", error="Couldn't read the evidence. Choose a readable file.", repro_brief=None, evidence_frames=[])
     surface.state.frame = False
     page.goto(f"http://reprobe.test/app/runs/{RUN_ID}")
-    expect(page.locator("#run-status")).to_have_text("Couldn't read the evidence")
+    expect(page.locator("#run-status")).to_have_text("Failed")
     expect(page.locator("#screen-waiting")).to_contain_text("Check your files and steps")
     expect(page.locator("#run-message")).to_contain_text("Choose a readable file")
     expect(page.locator("#cancel-run")).to_be_hidden()
     expect(page.locator("#view-report")).to_be_visible()
     capture(surface, "live-evidence-error")
+
+
+def test_verdict_updates_live_and_hides_the_step_for_not_reproduced(surface):
+    page = surface.page
+    surface.state.run["status"] = "running"
+    page.goto(f"http://reprobe.test/app/runs/{RUN_ID}")
+    page.wait_for_function("Boolean(window.testRunStream)")
+    verdict = {"verdict": "reproduced", "expected": "$30", "observed": "$42",
+               "step_number": 3, "reason": "The total stayed at $42."}
+    send_event(page, "reproduction.verdict", verdict, 1)
+    panel = page.locator("#verdict")
+    expect(panel).to_contain_text("Remove the bottle")
+    expect(panel.locator(".bad")).to_have_text("$42")
+    verdict.update(verdict="not_reproduced", observed="$30", reason="The total updated.")
+    send_event(page, "reproduction.verdict", verdict, 2)
+    expect(panel.locator("h2")).to_have_text("Not reproduced")
+    expect(panel).not_to_contain_text("Step 3")
+    expect(panel.locator(".bad")).to_have_count(0)
+    send_event(page, "run.status", {"status": "timed_out", "verdict": None}, 3)
+    expect(panel).to_be_hidden()
+    expect(page.locator("#run-status")).to_have_text("Timed out")
+
+
+def test_report_plays_the_first_recording_and_links_every_tab(surface, recorded_tab):
+    surface.state.video = recorded_tab
+    surface.state.run.update(
+        verdict=dict(verdict="reproduced", expected="$30", observed="$42", step_number=3,
+                     reason="The bottle disappeared but its price remained in the total."),
+        recordings=["first.webm", "second.webm"],
+    )
+    page = surface.page
+    page.goto(f"http://reprobe.test/app/reports/{RUN_ID}")
+    panel = page.locator("#verdict")
+    expect(panel.locator("h2")).to_have_text("Reproduced")
+    expect(panel).to_contain_text("Step 3")
+    expect(panel).to_contain_text("Remove the bottle")
+    expect(panel).to_contain_text(surface.state.run["verdict"]["reason"])
+    expect(panel.locator(".bad")).to_have_text("$42")
+    expect(panel.get_by_text("$30", exact=True)).to_be_visible()
+    video = page.locator("#recording-player")
+    expect(video).to_be_visible()
+    page.wait_for_function("document.querySelector('video').videoWidth > 0")
+    assert video.evaluate("v => v.controls && v.currentSrc.endsWith('/recordings/1.webm')")
+    video.evaluate("async v => { v.muted = true; await v.play(); }")
+    page.wait_for_function("document.querySelector('video').currentTime > 0")
+    links = page.locator("#recording-downloads a")
+    expect(links).to_have_count(2)
+    for i, link in enumerate(links.all(), start=1):
+        expect(link).to_have_text(f"WebM video · tab {i}")
+        expect(link).to_have_attribute("download", f"recording-{i}.webm")
+        expect(link).to_have_attribute("href", f"/api/runs/{RUN_ID}/recordings/{i}.webm")
+    capture(surface, "report-verdict")
+    surface.state.run["verdict"].update(verdict="not_reproduced", observed="$30")
+    page.reload()
+    expect(panel.locator("h2")).to_have_text("Not reproduced")
+    expect(panel).not_to_contain_text("Step 3")
+    expect(panel.locator(".bad")).to_have_count(0)

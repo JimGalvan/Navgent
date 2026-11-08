@@ -40,6 +40,7 @@
         ><a class="quiet" href="/app/reports">All reports</a>
       </div>
       <p id="report-message" class="message" role="status"></p>
+      <section id="verdict" class="verdict" aria-label="Reproduction verdict" hidden></section>
       <div class="report-grid section">
         <section>
           <h2 class="section-title">Evidence</h2>
@@ -47,9 +48,12 @@
             <p class="empty">Looking for a saved browser frame…</p>
           </div>
           <p class="notice" id="evidence-caption">
-            Final browser frame. Annotations and additional capture formats are
-            in development.
+            Final browser frame
           </p>
+          <section id="recording-section" class="section" hidden>
+            <h2 class="section-title">Browser recording</h2>
+            <video id="recording-player" controls playsinline preload="metadata" aria-label="Browser recording, tab 1"></video>
+          </section>
           <section id="key-frames-section" class="section" hidden>
             <h2 class="section-title">Submitted evidence · key frames</h2>
             <p class="notice">Frames read from your uploads before execution. These show the reported bug, not observations from this run.</p>
@@ -80,25 +84,19 @@
             <span class="muted">User-reported actual</span>
             <p id="report-actual"></p>
           </div>
-          <p id="verdict-note" class="notice">
-            Task completion is not a confirmed reproduction verdict. Reported
-            actual behavior is the user's account of the bug.
-          </p>
           <section id="report-assertion" class="section" hidden>
             <h2 class="section-title">Planned assertion</h2>
             <div class="field"><span class="muted">Check</span><p id="assertion-check"></p></div>
             <div class="field"><span class="muted">Look in</span><p id="assertion-look-in"></p></div>
-            <p class="notice">This is the check derived from the evidence. See the run output for what the browser agent observed.</p>
           </section>
           <section class="section">
             <h2 class="section-title">Download</h2>
+            <div id="recording-downloads"></div>
             <a id="download-frame" class="download" hidden
               >Browser screenshot (JPEG)</a
             ><a id="download-json" class="download" hidden>Run record (JSON)</a
             ><button class="download" disabled>
               Annotated screenshot · coming later</button
-            ><button class="download" disabled>
-              Session recording · coming later</button
             ><button class="download" disabled>
               Network log (HAR) · coming later</button
             ><button class="download" disabled>

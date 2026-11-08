@@ -432,6 +432,22 @@ time {
 .bad {
   color: var(--red);
 }
+.verdict {
+  border-block: 1px solid var(--line);
+  padding-block: 18px;
+  margin-bottom: 24px;
+  overflow-wrap: anywhere;
+}
+.verdict h2 { margin: 0 0 8px; }
+.verdict dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 16px;
+  margin-bottom: 0;
+}
+.verdict dt { color: var(--muted); }
+.verdict dd { margin: 0; white-space: pre-wrap; }
+#recording-player { display: block; width: 100%; }
 .good {
   color: var(--lime);
 }

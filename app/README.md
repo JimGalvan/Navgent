@@ -41,15 +41,19 @@ Uploads are saved before analysis. Screenshots accept PNG, JPEG, WebP, GIF, BMP 
 
 Set `REPROBE_EVIDENCE_MODEL` in the existing root `.env` to override `AgentSettings.evidence_model` (default `openai:gpt-5-nano`), alongside `REPROBE_STRONG_MODEL` and `REPROBE_FAST_MODEL`. Evidence analysis runs on the application backend, usually in a few seconds to around 30 seconds, with a 90-second timeout. Model errors, invalid briefs and unreadable media fail the run as "Couldn't read the evidence" without starting a browser. Error reports omit provider request contents and image data URLs.
 
-The run record exposes `bug_report`, `repro_brief` and `evidence_frames`. Key frames are available to the run owner at `GET /api/runs/<run-id>/evidence/<1-based-number>.jpg`. Only uploaded files and JPEG evidence are written to disk; model message image data URLs are neither stored nor logged. Live events include `evidence.ready` and `evidence.failed`, and run status includes `reading_evidence`. Stop remains available while analysis is pending.
+The run record exposes `bug_report`, `repro_brief` and `evidence_frames`. The owner can fetch key frames at `GET /api/runs/<run-id>/evidence/<1-based-number>.jpg`. Live events include `evidence.ready` and `evidence.failed`, and run status includes `reading_evidence`. Stop remains available while analysis is pending.
+
+The live viewer and report use the latest `reproduction.verdict` event. The run's `verdict` includes the expected and observed values, a reason, and an optional brief step. A completed run without an event reads as inconclusive. Failed, cancelled and timed-out runs show their execution status.
+
+After the browser closes, the app saves the tab-ordered list of WebM filenames in `recordings`. The report plays the first video and links each tab's download at `GET /api/runs/<run-id>/recordings/<1-based-number>.webm`. Only the run owner can access these files. Reruns reuse the submitted evidence and generate their own recordings and verdict.
 
 ## Boundaries and next agent integration
 
-The preview verdict and sample checkout are illustrative. Real reports show actual run output/events and available frames, with no confirmed verdict until structured assertion evidence exists. Recording, HAR, annotation and generated-script downloads are unavailable rather than simulated in real runs. Arbitrary pause/resume, remote sandboxing and telemetry are not implemented.
+The preview verdict and sample checkout are illustrative. HAR, annotation and generated-script downloads remain in development.
 
 Evidence plans start automatically after analysis; editing the brief before execution is not implemented. The submitted URL remains separate from the model output and is always used to build the reproduction task.
 
-Useful follow-up agent contracts are structured assertion results and supported evidence-capture hooks. The app consumes only public session methods. Navgent currently chooses its own file-tool workspace under `navgent/`; per-run workspace injection should be added by the agent owner before enabling agent file-tool use for multiple users. The web runner does not provide an isolated execution sandbox or network allowlist. Keep real execution on trusted test targets during development.
+The app consumes only public session methods. Navgent currently chooses its own file-tool workspace under `navgent/`; per-run workspace injection should be added by the agent owner before enabling agent file-tool use for multiple users. The web runner does not provide an isolated execution sandbox or network allowlist. Keep real execution on trusted test targets during development.
 
 Saved target-site credentials use the ported credential endpoints and optional encryption key. They are separate from the Reprobe account password; no credential-manager interface is exposed in this first build. Browser takeover endpoints are retained, but interactive mouse/keyboard control is not yet exposed in the new viewer.
 
