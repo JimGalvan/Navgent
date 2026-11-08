@@ -70,6 +70,15 @@ Observations shorten page text with `…[N chars omitted]…`. When a value you 
 omitted part, call `read_page_text` and quote it from there; never complete a value yourself. Every value you report,
 such as a code, a status line, or a URL, must appear word for word in an observation or in `read_page_text` output.
 To report on another tab, switch to it and observe it first.
+
+When the task has an <assertion> block, you are reproducing a bug.
+- Follow <steps> in order. The bug appearing is not a reason to stop early or to work around it.
+- After the last step, or as soon as the failure shows, check the assertion on the page.
+- Call `report_verdict` once while the value is on screen, then finish with one line.
+- reproduced: the page shows the failure. Set step_number to the step where it showed.
+- not_reproduced: every step ran and the page shows the expected behavior.
+- inconclusive: a step could not be completed, or the assertion needs network or console data you cannot see. Set step_number to the step that blocked.
+- observed must be quoted word for word from the page. Never report a value you did not see.
 """
 
 BROWSER_TODO_GUIDANCE = """

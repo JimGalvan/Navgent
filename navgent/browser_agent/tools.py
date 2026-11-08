@@ -25,7 +25,9 @@ from navgent.browser_agent.steps import (
     step_reference,
     validate_plan,
 )
+from navgent.browser_agent.verdict import VerdictReport, check_observed
 from navgent.credentials import CredentialProvider
+from navgent.models import Verdict
 from navgent.sensitive_input import SensitiveInputChannel
 from navgent.shared.events import publish_custom_event
 from navgent.shared.verification import describe_entered_code, explain_missing_code
@@ -67,6 +69,26 @@ def build_browser_tools(
             return page_text
         omitted = len(page_text) - PAGE_TEXT_CHARACTER_LIMIT
         return f"{page_text[:PAGE_TEXT_CHARACTER_LIMIT]}…[{omitted} chars omitted]"
+
+    @tool(args_schema=VerdictReport)
+    async def report_verdict(
+            verdict: Verdict, expected: str, observed: str, reason: str, step_number: int | None = None,
+    ) -> str:
+        """Report whether the bug reproduced. Call once, after checking the assertion, while the value is on screen."""
+        if verdict != "inconclusive":
+            async with browser_lock:
+                page_text = await browser.get_page_text()
+            problem = check_observed(observed, page_text)
+            if problem:
+                return problem
+        publish_custom_event("reproduction.verdict", {
+            "verdict": verdict,
+            "expected": expected,
+            "observed": observed,
+            "step_number": step_number,
+            "reason": reason,
+        })
+        return "Verdict recorded. Finish with a one-line summary."
 
     @tool
     async def switch_tab(tab_id: str) -> str:
@@ -218,6 +240,7 @@ def build_browser_tools(
         navigate_and_observe,
         observe_page,
         read_page_text,
+        report_verdict,
         execute_steps,
         list_selected_credentials,
         switch_tab,
