@@ -111,3 +111,47 @@ class ModelSettingsTests(unittest.TestCase):
         ])
         self.assertIs(create.call_args.kwargs["model"], sentinel.strong_model)
         self.assertIs(create.call_args.kwargs["subagents"][0]["model"], sentinel.fast_model)
+
+    def test_vultr_models_use_the_vultr_endpoint_and_key(self) -> None:
+        cases = (
+            (llm.build_strong_model, "low"),
+            (llm.build_fast_model, "minimal"),
+            (llm.build_evidence_model, "minimal"),
+        )
+        with patch.dict(os.environ, {"VULTR_INFERENCE_API_KEY": "test-key"}):
+            for builder, effort in cases:
+                with self.subTest(builder=builder.__name__):
+                    with patch.object(llm, "init_chat_model", return_value=sentinel.model) as initialize:
+                        self.assertIs(builder(" vultr:glm-5.3-flash "), sentinel.model)
+                        initialize.assert_called_once_with(
+                            "openai:glm-5.3-flash",
+                            base_url="https://api.vultrinference.com/v1",
+                            api_key="test-key",
+                            use_responses_api=False,
+                            reasoning_effort=effort,
+                        )
+
+    def test_vultr_base_url_can_be_overridden(self) -> None:
+        environment = {"VULTR_INFERENCE_API_KEY": "test-key", "VULTR_INFERENCE_BASE_URL": "https://example.test/v1"}
+        with patch.dict(os.environ, environment):
+            with patch.object(llm, "init_chat_model") as initialize:
+                llm.build_fast_model("vultr:qwen3.8-flash-next")
+        self.assertEqual(initialize.call_args.kwargs["base_url"], "https://example.test/v1")
+
+    def test_vultr_models_need_an_inference_key(self) -> None:
+        for value in ("", "   "):
+            with self.subTest(value=value):
+                with patch.dict(os.environ, {"VULTR_INFERENCE_API_KEY": value}):
+                    with patch.object(llm, "init_chat_model") as initialize:
+                        with self.assertRaisesRegex(RuntimeError, "evidence_model uses Vultr, so VULTR_INFERENCE_API_KEY"):
+                            llm.build_evidence_model("vultr:glm-5.3-flash")
+                        initialize.assert_not_called()
+
+    def test_vultr_model_is_a_chat_completions_client_for_vultr(self) -> None:
+        with patch.dict(os.environ, {"VULTR_INFERENCE_API_KEY": "test-key"}):
+            model = llm.build_strong_model("vultr:glm-5.3")
+        self.assertEqual(model.model_name, "glm-5.3")
+        self.assertEqual(model.openai_api_base, "https://api.vultrinference.com/v1")
+        self.assertEqual(model.openai_api_key.get_secret_value(), "test-key")
+        self.assertFalse(model.use_responses_api)
+        self.assertEqual(model.reasoning_effort, "low")
