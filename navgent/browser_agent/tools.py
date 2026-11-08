@@ -34,6 +34,7 @@ from navgent.browser_agent.steps import (
 from navgent.browser_agent.verdict import VerdictReport, check_observed
 from navgent.credentials import CredentialProvider
 from navgent.models import Verdict
+from navgent.redaction import SecretRedactor
 from navgent.sensitive_input import SensitiveInputChannel
 from navgent.shared.events import publish_custom_event
 from navgent.shared.verification import describe_entered_code, explain_missing_code
@@ -47,8 +48,11 @@ def build_browser_tools(
         browser: BrowserSession,
         credential_provider: CredentialProvider | None = None,
         sensitive_inputs: SensitiveInputChannel | None = None,
+        credential_host: str | None = None,
+        redactor: SecretRedactor | None = None,
 ) -> list[BaseTool]:
     sensitive_inputs = sensitive_inputs or SensitiveInputChannel()
+    redactor = redactor or SecretRedactor()
     browser_lock = asyncio.Lock()
     last_brief_step = 0
 
@@ -185,15 +189,16 @@ def build_browser_tools(
                 except GraphInterrupt:
                     raise
                 except Exception as exception:
+                    error = redactor.redact(str(exception))
                     publish_clicks(step, plan)
-                    publish_custom_event("browser.action.failed", {**event_payload, "error": str(exception)})
+                    publish_custom_event("browser.action.failed", {**event_payload, "error": error})
                     return json.dumps(
                         {
                             "ok": False,
                             "kind": "execution_error",
                             "completed": completed,
                             "failed": reference,
-                            "error": str(exception),
+                            "error": error,
                             "notes": notes,
                         }
                     )
@@ -210,7 +215,7 @@ def build_browser_tools(
 
             current_url = await browser.wait_for_page_to_settle()
             if current_url != previous_url:
-                notes.append(f"URL changed to {current_url}")
+                notes.append(redactor.redact(f"URL changed to {current_url}"))
 
             return json.dumps(
                 {
@@ -263,12 +268,18 @@ def build_browser_tools(
     async def fill_credential(step: CredentialFillStep) -> None:
         if not credential_provider:
             raise RuntimeError("Credential storage is not configured")
-        secret = await credential_provider.resolve(step.credential_id, browser.current_hostname)
-        value = getattr(secret, step.field)
-        if not value:
-            raise ValueError(f"The selected credential has no saved {step.field} field")
-        await browser.fill(step.element_index, value)
-        del secret, value
+
+        async def read_value(hostname: str) -> str:
+            secret = await credential_provider.resolve(step.credential_id, hostname)
+            value = getattr(secret, step.field)
+            del secret
+            if not value:
+                raise ValueError(f"The selected credential has no saved {step.field} field")
+            redactor.add(value)
+            return value
+
+        target_host = credential_host or browser.current_hostname
+        await browser.fill_credential(step.element_index, target_host, read_value)
 
     async def request_mfa_code(step: MfaCodeStep) -> str:
         request = sensitive_inputs.begin(step.element_index, step.prompt, step.submit_element_index)

@@ -11,6 +11,7 @@ from navgent.browser_agent.prompts import SYSTEM_PROMPT, TODO_SYSTEM_PROMPT
 from navgent.browser_agent.tools import build_browser_tools
 from navgent.credentials import CredentialProvider
 from navgent.page_navigator.page_navigator import build_page_navigator
+from navgent.redaction import SecretRedactor
 from navgent.sensitive_input import SensitiveInputChannel
 from navgent.settings import AgentSettings
 from navgent.shared.llm import build_strong_model
@@ -21,6 +22,7 @@ def build_browser_agent(
         sensitive_inputs: SensitiveInputChannel,
         settings: AgentSettings,
         credential_provider: CredentialProvider | None = None,
+        redactor: SecretRedactor | None = None,
 ):
     agent_skills_path = Path(__file__).resolve().parent / "skills"
     agent_files_path = Path(__file__).resolve().parent / "files"
@@ -29,6 +31,8 @@ def build_browser_agent(
         browser_session,
         credential_provider=credential_provider,
         sensitive_inputs=sensitive_inputs,
+        credential_host=settings.credential_host,
+        redactor=redactor,
     )
     page_navigator_subagent = build_page_navigator(browser_session, settings)
 
