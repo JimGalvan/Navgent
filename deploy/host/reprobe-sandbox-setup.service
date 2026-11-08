@@ -1,0 +1,12 @@
+[Unit]
+Description=Reprobe sandbox network and firewall rules
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/sandboxctl setup
+
+[Install]
+WantedBy=multi-user.target
