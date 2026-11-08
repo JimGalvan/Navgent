@@ -34,7 +34,11 @@ class SessionConstructionTests(unittest.IsolatedAsyncioTestCase):
             allowed_hosts=("www.saucedemo.com",),
         )
         self.browser.assert_called_once_with(
-            self.manager.return_value, trace_path=settings.trace_path, recording_dir=settings.recording_dir,
+            self.manager.return_value,
+            trace_path=settings.trace_path,
+            recording_dir=settings.recording_dir,
+            allowed_hosts=("www.saucedemo.com",),
+            on_request_blocked=session._report_blocked_request,
         )
         self.agent.assert_called_once_with(
             self.browser.return_value, session._sensitive_inputs, settings, credential_provider=None,
