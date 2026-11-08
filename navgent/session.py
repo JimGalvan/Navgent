@@ -2,6 +2,7 @@ import asyncio
 import logging
 import time
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import TracebackType
@@ -42,6 +43,7 @@ from navgent.exceptions import (
     SessionNotWaitingForInputError,
 )
 from navgent.models import BrowserControlAction, SessionStatus
+from navgent.redaction import SecretRedactor
 from navgent.runtime import LangChainAgentRuntime
 from navgent.sensitive_input import SensitiveInputChannel
 from navgent.settings import AgentSettings
@@ -61,7 +63,10 @@ class BrowserAgentSession:
             raise ValueError("max_runtime_seconds must be greater than 0")
         if settings.sensitive_input_window_seconds <= 0:
             raise ValueError("sensitive_input_window_seconds must be greater than 0")
+        if credential_provider:
+            settings = replace(settings, trace_path=None)
         self._settings = settings
+        self._redactor = SecretRedactor()
         self._browser_manager = BrowserManager(
             headless=settings.headless,
             channel=settings.browser_channel,
@@ -74,12 +79,14 @@ class BrowserAgentSession:
             recording_dir=settings.recording_dir,
             allowed_hosts=settings.allowed_hosts,
             on_request_blocked=self._report_blocked_request,
+            redactor=self._redactor,
         )
         self._sensitive_inputs = SensitiveInputChannel()
         if credential_provider:
             credential_provider = SelectedCredentialProvider(credential_provider, selected_credential_ids)
         agent = build_browser_agent(
-            self._browser, self._sensitive_inputs, settings, credential_provider=credential_provider,
+            self._browser, self._sensitive_inputs, settings,
+            credential_provider=credential_provider, redactor=self._redactor,
         )
         self._runtime = LangChainAgentRuntime(agent, AgentContext(), uuid4())
         self._event_queue: asyncio.Queue[AgentEvent | None] = asyncio.Queue()
@@ -474,11 +481,11 @@ class BrowserAgentSession:
         await self._emit(SessionStatusEvent(status))
 
     async def _emit(self, event: AgentEvent) -> None:
-        await self._event_queue.put(event)
+        await self._event_queue.put(self._redactor.redact_data(event))
 
     def _report_blocked_request(self, blocked: BlockedRequest) -> None:
         event = SandboxRequestBlockedEvent(blocked.host, blocked.url, blocked.error, blocked.brief_step)
-        self._event_queue.put_nowait(event)
+        self._event_queue.put_nowait(self._redactor.redact_data(event))
 
     async def _await_task(self, task: asyncio.Task[None] | None) -> None:
         if task is None or task is asyncio.current_task():

@@ -39,9 +39,11 @@ class SessionConstructionTests(unittest.IsolatedAsyncioTestCase):
             recording_dir=settings.recording_dir,
             allowed_hosts=("www.saucedemo.com",),
             on_request_blocked=session._report_blocked_request,
+            redactor=session._redactor,
         )
         self.agent.assert_called_once_with(
-            self.browser.return_value, session._sensitive_inputs, settings, credential_provider=None,
+            self.browser.return_value, session._sensitive_inputs, settings,
+            credential_provider=None, redactor=session._redactor,
         )
         self.assertIs(session._runtime.agent, self.agent.return_value)
         self.assertEqual(vars(session._runtime.context), {})
