@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Reprobe local reproduction fixture</title>
+<style>body{font:20px system-ui;max-width:700px;margin:60px auto;padding:24px}li{padding:20px 0}button{font:inherit;padding:10px}#total{font-size:32px}</style>
+<h1>Your cart</h1>
+<p>Coupon SAVE50 discounts all items by 50%.</p>
+<ul>
+  <li>Trail Pack 30L — $60.00</li>
+  <li id="bottle">Insulated Bottle — $24.00 <button onclick="document.getElementById('bottle').remove();document.getElementById('subtotal').textContent='$60.00';document.getElementById('discount').textContent='−$30.00'">Remove Insulated Bottle</button></li>
+</ul>
+<p>Subtotal: <span id="subtotal">$84.00</span></p>
+<p>Discount: <span id="discount">−$42.00</span></p>
+<p id="total">Total: $42.00</p>
+<p>The fixture intentionally leaves the total stale after item removal.</p>
+</html>
