@@ -14,6 +14,8 @@ from app.config import DATABASE_PATH, read_agent_settings
 from app.credentials.exceptions import CredentialNotFoundError
 from app.credentials.service import CredentialService
 from app.runs import constants
+from app.runs.annotated_export import AnnotatedRecordingExporter
+from app.runs.annotations import AnnotationTrack, annotation_tracks
 from app.runs.context import RunContext
 from app.runs.event_utils import RunEventUtils
 from app.runs.evidence import EvidenceUploadError, RunEvidenceStore, validate_video
@@ -29,6 +31,7 @@ from app.runs.repository import RunRepository
 from app.runs.runtime import build_agent_runtime
 from app.runs.schemas import (
     BrowserControlEvent,
+    RecordingMetadata,
     ReproductionInput,
     RunEvent,
     RunRecord,
@@ -76,6 +79,7 @@ class RunManager:
         self._credential_service = credential_service
         self._active_run_ids: set[UUID] = set()
         self._completed_frames: OrderedDict[UUID, bytes] = OrderedDict()
+        self._annotated_exporter = AnnotatedRecordingExporter()
 
     async def create_run(
             self,
@@ -410,6 +414,13 @@ class RunManager:
                 path.name for path in context.session.recording_paths
                 if path.resolve().parent == directory and path.suffix.lower() == ".webm" and path.is_file()
             ]
+            saved_ids = {Path(name).stem for name in context.run.recordings}
+            context.run.recording_metadata = [
+                RecordingMetadata(id=item.id, width=item.width, height=item.height,
+                                  start_wall_time_ms=item.start_wall_time_ms)
+                for item in getattr(context.session, "recordings", ())
+                if item.id in saved_ids
+            ]
             await self._await_cancelled_task(context.frame_task)
             latest_frame = context.session.get_latest_frame()
             if latest_frame is not None:
@@ -510,6 +521,26 @@ class RunManager:
             if path.parent == directory and path.is_file():
                 return path
         raise RunNotFoundError("This recording was not found")
+
+    def get_annotation_tracks(self, run_id: UUID, user_id: UUID) -> list[AnnotationTrack]:
+        _, run = self._resolve_owned(run_id, user_id)
+        return annotation_tracks(run, self._repository.list_events(run_id))
+
+    def _annotated_source(self, run_id: UUID, user_id: UUID, number: int):
+        source = self.get_recording(run_id, user_id, number)
+        track = self.get_annotation_tracks(run_id, user_id)[number - 1]
+        return source, track
+
+    def prepare_annotated_recording(self, run_id: UUID, user_id: UUID, number: int) -> Path:
+        source, track = self._annotated_source(run_id, user_id, number)
+        return self._annotated_exporter.prepare(source, track)
+
+    def get_annotated_recording(self, run_id: UUID, user_id: UUID, number: int) -> Path:
+        source, track = self._annotated_source(run_id, user_id, number)
+        path = self._annotated_exporter.destination(source, track)
+        if not path.is_file():
+            raise RunNotFoundError("Prepare the annotated video before downloading it.")
+        return path
 
     def _require_waiting_context(self, run_id: UUID, user_id: UUID) -> RunContext:
         context, _ = self._resolve_owned(run_id, user_id)

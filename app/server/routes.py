@@ -60,6 +60,8 @@ from app.credentials.exceptions import (
 from app.credentials.repository import CredentialRepository
 from app.credentials.service import CredentialService
 from app.runs import constants
+from app.runs.annotated_export import ExportBusyError, ExportFailedError
+from app.runs.annotations import AnnotationTrack
 from app.runs.context import RunContext
 from app.runs.exceptions import (
     RunCapacityReachedError,
@@ -347,6 +349,29 @@ async def get_recording(run_id: UUID, number: int, user: CurrentUser) -> FileRes
 @app.get("/api/runs/{run_id}/events", response_model=list[RunEvent])
 async def get_run_events(run_id: UUID, user: CurrentUser) -> list[RunEvent]:
     return await run_in_threadpool(run_manager.get_events, run_id, user.id)
+
+
+@app.get("/api/runs/{run_id}/annotations", response_model=list[AnnotationTrack])
+async def get_annotations(run_id: UUID, user: CurrentUser) -> list[AnnotationTrack]:
+    return await run_in_threadpool(run_manager.get_annotation_tracks, run_id, user.id)
+
+
+@app.post("/api/runs/{run_id}/recordings/{number}/annotated-export")
+async def prepare_annotated_export(run_id: UUID, number: int, user: CurrentUser):
+    try:
+        await run_in_threadpool(run_manager.prepare_annotated_recording, run_id, user.id, number)
+    except ExportBusyError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except ExportFailedError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    return {"download_url": f"/api/runs/{run_id}/recordings/{number}/annotated.mp4"}
+
+
+@app.get("/api/runs/{run_id}/recordings/{number}/annotated.mp4")
+async def download_annotated_export(run_id: UUID, number: int, user: CurrentUser) -> FileResponse:
+    path = await run_in_threadpool(run_manager.get_annotated_recording, run_id, user.id, number)
+    return FileResponse(path, media_type="video/mp4", filename=f"reprobe-{run_id}-tab-{number}-annotated.mp4",
+                        headers=NO_CACHE_HEADERS)
 
 
 @app.get("/api/runs/{run_id}/stream")

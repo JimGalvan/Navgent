@@ -29,6 +29,7 @@ class RunRepository:
             "evidence_frames": "JSON NOT NULL DEFAULT '[]'",
             "reported_verdict": "JSON",
             "recordings": "JSON NOT NULL DEFAULT '[]'",
+            "recording_metadata": "JSON NOT NULL DEFAULT '[]'",
         }
         with self._engine.begin() as connection:
             for name, definition in additions.items():
@@ -123,6 +124,7 @@ class RunRepository:
             evidence_frames=frames,
             reported_verdict=run.reported_verdict.model_dump() if run.reported_verdict else None,
             recordings=run.recordings,
+            recording_metadata=[item.model_dump() for item in run.recording_metadata],
             status=run.status.value,
             max_runtime_seconds=run.max_runtime_seconds,
             final_output=run.final_output,

@@ -12,6 +12,7 @@ from pydantic import (
     SecretStr,
     computed_field,
     field_validator,
+    model_serializer,
     model_validator,
 )
 
@@ -72,17 +73,32 @@ class EvidenceFrame(BaseModel):
 
 
 class RunVerdict(BaseModel):
+    verdict_id: str = ""
     verdict: Verdict
     expected: str
     observed: str
     step_number: int | None
     reason: str
 
+    @model_serializer(mode="wrap")
+    def serialize_verdict(self, handler):
+        result = handler(self)
+        if not self.verdict_id:
+            result.pop("verdict_id", None)
+        return result
+
     @model_validator(mode="after")
     def ignore_step_on_passing_check(self):
         if self.verdict == "not_reproduced":
             self.step_number = None
         return self
+
+
+class RecordingMetadata(BaseModel):
+    id: str
+    width: int
+    height: int
+    start_wall_time_ms: float | None = None
 
 
 class RunRecord(BaseModel):
@@ -96,6 +112,7 @@ class RunRecord(BaseModel):
     evidence_frames: list[EvidenceFrame] = Field(default_factory=list)
     reported_verdict: RunVerdict | None = Field(default=None, exclude=True)
     recordings: list[str] = Field(default_factory=list)
+    recording_metadata: list[RecordingMetadata] = Field(default_factory=list)
     status: RunStatus = RunStatus.QUEUED
     max_runtime_seconds: int
     final_output: str | None = None
