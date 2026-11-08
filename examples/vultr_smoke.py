@@ -3,6 +3,7 @@
     python examples/vultr_smoke.py tools vultr:glm-5.3 vultr:minimax-m3.1-flash
     python examples/vultr_smoke.py evidence vultr:glm-5.3-flash vultr:qwen3.8-flash-next
     python examples/vultr_smoke.py reproduce --strong vultr:glm-5.3 --fast vultr:glm-5.3-flash --runs 3
+    python examples/vultr_smoke.py reproduce ... --ws-endpoint ws://127.0.0.1:49153/
 """
 
 import argparse
@@ -37,6 +38,7 @@ from navgent.evidence.prompts import SYSTEM_PROMPT
 from navgent.shared.llm import build_evidence_model, build_strong_model
 
 SAUCEDEMO_URL = "https://www.saucedemo.com/"
+SAUCEDEMO_HOST = "www.saucedemo.com"
 SAUCEDEMO_STEPS = """1. Open https://www.saucedemo.com/
 2. Log in with username problem_user and password secret_sauce
 3. Add "Sauce Labs Backpack" to the cart
@@ -101,8 +103,14 @@ async def check_evidence(model_name: str, screenshot: Path) -> None:
         print(f"     assertion: {brief.assertion.model_dump()}")
 
 
-async def check_reproduction(strong: str, fast: str, runs: int) -> None:
-    settings = AgentSettings(strong_model=strong, fast_model=fast, evidence_model=fast)
+async def check_reproduction(strong: str, fast: str, runs: int, ws_endpoint: str | None) -> None:
+    settings = AgentSettings(
+        strong_model=strong,
+        fast_model=fast,
+        evidence_model=fast,
+        browser_ws_endpoint=ws_endpoint,
+        allowed_hosts=(SAUCEDEMO_HOST,),
+    )
     report = saucedemo_report(())
     analysis = await analyze_evidence(report, settings)
     task = build_reproduction_task(report, analysis.brief)
@@ -189,7 +197,7 @@ async def run_checks(args: argparse.Namespace) -> None:
             for model_name in args.models:
                 await check_evidence(model_name, screenshot)
     else:
-        await check_reproduction(args.strong, args.fast, args.runs)
+        await check_reproduction(args.strong, args.fast, args.runs, args.ws_endpoint)
 
 
 def main() -> None:
@@ -203,6 +211,7 @@ def main() -> None:
     reproduce.add_argument("--strong", required=True)
     reproduce.add_argument("--fast", required=True)
     reproduce.add_argument("--runs", type=int, default=1)
+    reproduce.add_argument("--ws-endpoint", help="A Playwright server to run the browser on, such as a sandbox.")
     args = parser.parse_args()
     load_dotenv()
     asyncio.run(run_checks(args))
