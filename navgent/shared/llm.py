@@ -12,6 +12,10 @@ def build_fast_model(model: str) -> BaseChatModel:
     return _build_model(model, "fast_model", constants.FAST_MODEL_REASONING_EFFORT)
 
 
+def build_evidence_model(model: str) -> BaseChatModel:
+    return _build_model(model, "evidence_model", constants.FAST_MODEL_REASONING_EFFORT)
+
+
 def _build_model(model: str, setting: str, reasoning_effort: str) -> BaseChatModel:
     model = model.strip()
     provider, separator, model_id = model.partition(":")

@@ -13,6 +13,7 @@ from navgent.constants import (
 class AgentSettings:
     strong_model: str = DEFAULT_STRONG_MODEL
     fast_model: str = DEFAULT_FAST_MODEL
+    evidence_model: str = DEFAULT_FAST_MODEL
     headless: bool = True
     browser_channel: str | None = None
     trace_path: Path | None = None

@@ -20,6 +20,7 @@ class ModelSettingsTests(unittest.TestCase):
         cases = (
             (llm.build_strong_model, settings.strong_model, "none"),
             (llm.build_fast_model, settings.fast_model, "low"),
+            (llm.build_evidence_model, settings.evidence_model, "low"),
         )
         for builder, model, effort in cases:
             with self.subTest(model=model):
@@ -31,6 +32,7 @@ class ModelSettingsTests(unittest.TestCase):
         settings = AgentSettings()
         self.assertEqual(settings.strong_model, "openai:gpt-5.6-luna")
         self.assertEqual(settings.fast_model, "openai:gpt-5-nano")
+        self.assertEqual(settings.evidence_model, "openai:gpt-5-nano")
         self.assertTrue(settings.headless)
         self.assertIsNone(settings.browser_channel)
         self.assertIsNone(settings.trace_path)

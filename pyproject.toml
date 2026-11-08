@@ -18,6 +18,8 @@ dependencies = [
     "pydantic>=2.0,<3.0",
     "python-dotenv>=1.0",
     "fastapi>=0.115",
+    "opencv-python-headless>=4.10,<5.0",
+    "numpy>=2.0,<3.0",
 ]
 
 [tool.setuptools.packages.find]
