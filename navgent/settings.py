@@ -18,6 +18,7 @@ class AgentSettings:
     browser_channel: str | None = None
     browser_ws_endpoint: str | None = None
     allowed_hosts: tuple[str, ...] = ()
+    asset_hosts: tuple[str, ...] = ()
     credential_host: str | None = None
     trace_path: Path | None = None
     recording_dir: Path | None = None

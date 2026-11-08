@@ -194,7 +194,11 @@ class RunManager:
                 return
             run.max_runtime_seconds = min(run.max_runtime_seconds, int(context.sandbox.limits["time_limit_seconds"]))
             self._repository.save_run(run)
-            sandbox_options = {"browser_ws_endpoint": context.sandbox.ws_endpoint, "allowed_hosts": (host,)}
+            sandbox_options = {
+                "browser_ws_endpoint": context.sandbox.ws_endpoint,
+                "allowed_hosts": (host,),
+                "asset_hosts": tuple(context.sandbox.asset_hosts),
+            }
         context.session = build_agent_runtime(
             run.thread_id,
             user_id=run.user_id,

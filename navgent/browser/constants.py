@@ -12,6 +12,20 @@ FRAME_QUALITY_TAKEOVER = 80
 OBSERVE_ATTEMPTS = 3
 MAX_ELEMENTS = 100
 
+# Public, read-only CDNs a sandboxed page may load files from. The sandbox controller opens HTTPS to the same list.
+ASSET_HOSTS = (
+    "cdn.jsdelivr.net",
+    "unpkg.com",
+    "cdnjs.cloudflare.com",
+    "cdn.tailwindcss.com",
+    "code.jquery.com",
+    "ajax.googleapis.com",
+    "fonts.googleapis.com",
+    "fonts.gstatic.com",
+    "esm.sh",
+)
+ASSET_RESOURCE_TYPES = ("script", "stylesheet", "font", "image")
+
 KEY_ALIASES = {
     "ctrl": "Control",
     "control": "Control",

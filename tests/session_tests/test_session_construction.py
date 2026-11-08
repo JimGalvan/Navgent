@@ -32,6 +32,7 @@ class SessionConstructionTests(unittest.IsolatedAsyncioTestCase):
             channel="chrome",
             ws_endpoint="ws://127.0.0.1:3000/",
             allowed_hosts=("www.saucedemo.com",),
+            asset_hosts=(),
         )
         self.browser.assert_called_once_with(
             self.manager.return_value,
@@ -40,6 +41,7 @@ class SessionConstructionTests(unittest.IsolatedAsyncioTestCase):
             allowed_hosts=("www.saucedemo.com",),
             on_request_blocked=session._report_blocked_request,
             redactor=session._redactor,
+            asset_hosts=(),
         )
         self.agent.assert_called_once_with(
             self.browser.return_value, session._sensitive_inputs, settings,

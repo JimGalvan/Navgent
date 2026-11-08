@@ -29,28 +29,67 @@ def _install_log_redaction() -> None:
             redactors = list(_active_redactors)
             if not redactors:
                 return record
-            try:
-                message = record.getMessage()
-            except Exception:
-                return record
-            exception_text = None
-            if record.exc_info:
-                exception_text = "".join(traceback.format_exception(*record.exc_info)).rstrip("\n")
             for redactor in redactors:
-                message = redactor.redact(message)
-                if exception_text:
-                    exception_text = redactor.redact(exception_text)
-                if record.stack_info:
-                    record.stack_info = redactor.redact(record.stack_info)
-            record.msg = message
-            record.args = None
-            if exception_text:
-                record.exc_text = exception_text
-                record.exc_info = None
+                _redact_record(record, redactor)
             return record
 
         logging.setLogRecordFactory(redacting_factory)
         _factory_installed = True
+
+
+def _redact_record(record: logging.LogRecord, redactor: "SecretRedactor") -> None:
+    """Change a record only where it holds a remembered value, keeping the shape of its args.
+
+    Formatters such as uvicorn's access log unpack `record.args`, so the args stay a tuple or dict.
+    """
+    try:
+        message = record.getMessage()
+    except Exception:
+        return
+    if redactor.redact(message) != message:
+        if isinstance(record.msg, str):
+            record.msg = redactor.redact(record.msg)
+        record.args = _redact_log_args(record.args, redactor)
+        try:
+            still_leaks = redactor.redact(record.getMessage()) != record.getMessage()
+        except Exception:
+            still_leaks = True
+        if still_leaks:
+            record.msg = redactor.redact(message)
+            record.args = ()
+
+    if record.exc_info:
+        exception_text = "".join(traceback.format_exception(*record.exc_info)).rstrip("\n")
+        redacted_text = redactor.redact(exception_text)
+        if redacted_text != exception_text:
+            record.exc_text = redacted_text
+            record.exc_info = None
+    if record.stack_info:
+        record.stack_info = redactor.redact(record.stack_info)
+
+
+def _redact_log_args(args: Any, redactor: "SecretRedactor") -> Any:
+    if isinstance(args, dict):
+        redacted = {}
+        for key, value in args.items():
+            redacted[key] = _redact_log_arg(value, redactor)
+        return redacted
+    if isinstance(args, tuple):
+        redacted_args = []
+        for value in args:
+            redacted_args.append(_redact_log_arg(value, redactor))
+        return tuple(redacted_args)
+    return args
+
+
+def _redact_log_arg(value: Any, redactor: "SecretRedactor") -> Any:
+    if isinstance(value, str):
+        return redactor.redact(value)
+    text = str(value)
+    redacted = redactor.redact(text)
+    if redacted != text:
+        return redacted
+    return value
 
 
 class SecretRedactor:
