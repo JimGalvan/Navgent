@@ -16,6 +16,8 @@ class AgentSettings:
     evidence_model: str = DEFAULT_FAST_MODEL
     headless: bool = True
     browser_channel: str | None = None
+    browser_ws_endpoint: str | None = None
+    allowed_hosts: tuple[str, ...] = ()
     trace_path: Path | None = None
     recording_dir: Path | None = None
     max_runtime_seconds: float = DEFAULT_MAX_RUNTIME_SECONDS

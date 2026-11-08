@@ -60,7 +60,12 @@ class BrowserAgentSession:
         if settings.sensitive_input_window_seconds <= 0:
             raise ValueError("sensitive_input_window_seconds must be greater than 0")
         self._settings = settings
-        self._browser_manager = BrowserManager(headless=settings.headless, channel=settings.browser_channel)
+        self._browser_manager = BrowserManager(
+            headless=settings.headless,
+            channel=settings.browser_channel,
+            ws_endpoint=settings.browser_ws_endpoint,
+            allowed_hosts=settings.allowed_hosts,
+        )
         self._browser = BrowserSession(
             self._browser_manager, trace_path=settings.trace_path, recording_dir=settings.recording_dir,
         )

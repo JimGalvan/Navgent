@@ -24,9 +24,15 @@ class SessionConstructionTests(unittest.IsolatedAsyncioTestCase):
         settings = AgentSettings(
             strong_model="anthropic:strong-model", fast_model="openai:fast-model", headless=False,
             browser_channel="chrome", trace_path=Path("trace.zip"), recording_dir=Path("recording"),
+            browser_ws_endpoint="ws://127.0.0.1:3000/", allowed_hosts=("www.saucedemo.com",),
         )
         session = BrowserAgentSession(settings)
-        self.manager.assert_called_once_with(headless=False, channel="chrome")
+        self.manager.assert_called_once_with(
+            headless=False,
+            channel="chrome",
+            ws_endpoint="ws://127.0.0.1:3000/",
+            allowed_hosts=("www.saucedemo.com",),
+        )
         self.browser.assert_called_once_with(
             self.manager.return_value, trace_path=settings.trace_path, recording_dir=settings.recording_dir,
         )
