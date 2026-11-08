@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from collections import OrderedDict
 from collections.abc import AsyncIterator
@@ -27,6 +28,7 @@ from app.runs.exceptions import (
     RunNotWaitingForInputError,
     SensitiveInputNotPendingError,
 )
+from app.runs.proof import ProofFrameInfo, proof_time, render_proof_frame
 from app.runs.repository import RunRepository
 from app.runs.runtime import build_agent_runtime
 from app.runs.schemas import (
@@ -92,6 +94,7 @@ class RunManager:
             screenshots: list[UploadFile] | None = None,
             video: UploadFile | None = None,
             reuse_evidence: RunRecord | None = None,
+            bug_id: UUID | None = None,
     ) -> RunRecord:
         async with self._manager_lock:
             if len(self._active_run_ids) >= self._max_concurrent_runs:
@@ -106,6 +109,8 @@ class RunManager:
                 user_id=user_id, credential_ids=selected_credential_ids,
                 bug_report=StoredBugReport(**bug_report.model_dump()) if bug_report else None,
             )
+            if bug_id is not None:
+                run.bug_id = bug_id
             context = RunContext(run=run)
             self._contexts[run.id] = context
             self._active_run_ids.add(run.id)
@@ -455,19 +460,30 @@ class RunManager:
             task.cancel()
             await self._await_cancelled_task(task)
 
-    async def rerun_run(self, run_id: UUID, user_id: UUID) -> RunRecord:
+    async def rerun_run(self, run_id: UUID, user_id: UUID, target_url: str | None = None) -> RunRecord:
         _, run = self._resolve_owned(run_id, user_id)
         if not run.status.is_terminal:
             raise RunNotRerunnableError("Only a finished run can be started again")
 
+        report = run.bug_report.model_copy(deep=True) if run.bug_report else None
+        task = run.task
+        if target_url is not None:
+            if report is None:
+                raise RunNotRerunnableError("This run has no saved bug report. Submit a new report to change its URL.")
+            report.target_url = ReproductionInput.validate_target_url(target_url)
+            data = json.loads(task)
+            data["url"] = report.target_url
+            task = json.dumps(data)
+
         try:
             return await self.create_run(
-                task=run.task,
+                task=task,
                 max_runtime_seconds=run.max_runtime_seconds,
                 user_id=user_id,
                 credential_ids=list(run.credential_ids),
-                bug_report=run.bug_report,
+                bug_report=report,
                 reuse_evidence=run if run.bug_report else None,
+                bug_id=run.bug_id,
             )
         except CredentialNotFoundError as exception:
             raise RunNotRerunnableError(
@@ -525,6 +541,27 @@ class RunManager:
     def get_annotation_tracks(self, run_id: UUID, user_id: UUID) -> list[AnnotationTrack]:
         _, run = self._resolve_owned(run_id, user_id)
         return annotation_tracks(run, self._repository.list_events(run_id))
+
+    def _proof_source(self, run_id: UUID, user_id: UUID):
+        tracks = self.get_annotation_tracks(run_id, user_id)
+        findings = [(track, finding) for track in tracks for finding in track.findings]
+        if not findings:
+            raise RunNotFoundError("No positioned finding was saved for this run.")
+        track, finding = max(findings, key=lambda item: item[1].number)
+        return self.get_recording(run_id, user_id, track.number), track, finding
+
+    def get_proof_frame_info(self, run_id: UUID, user_id: UUID) -> ProofFrameInfo:
+        _, track, finding = self._proof_source(run_id, user_id)
+        verdict = self.get_run(run_id, user_id).verdict
+        return ProofFrameInfo(
+            recording_number=track.number, time_ms=proof_time(finding),
+            step_number=finding.brief_step, explanation=finding.explanation,
+            expected=verdict.expected, observed=verdict.observed,
+        )
+
+    def get_proof_frame(self, run_id: UUID, user_id: UUID) -> bytes:
+        source, track, finding = self._proof_source(run_id, user_id)
+        return render_proof_frame(source, track, finding)
 
     def _annotated_source(self, run_id: UUID, user_id: UUID, number: int):
         source = self.get_recording(run_id, user_id, number)

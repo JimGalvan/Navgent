@@ -103,6 +103,7 @@ class RecordingMetadata(BaseModel):
 
 class RunRecord(BaseModel):
     id: UUID = Field(default_factory=uuid4)
+    bug_id: UUID = Field(default_factory=uuid4)
     thread_id: UUID = Field(default_factory=uuid4)
     user_id: UUID | None = None
     credential_ids: list[UUID] = Field(default_factory=list, max_length=25)
@@ -189,10 +190,12 @@ class RunSummary(BaseModel):
     """A run as it appears in the dashboard history list."""
 
     id: UUID
+    bug_id: UUID | None = None
     task: str
     status: RunStatus
     created_at: datetime
     updated_at: datetime
+    verdict: RunVerdict | None = None
 
 
 class RunListResponse(BaseModel):
@@ -204,3 +207,12 @@ class RunResponse(BaseModel):
     stream_url: str
     screen_url: str
     control_url: str
+
+
+class RerunRequest(BaseModel):
+    target_url: str = Field(min_length=1, max_length=1_000)
+
+    @field_validator("target_url")
+    @classmethod
+    def validate_target_url(cls, value: str) -> str:
+        return ReproductionInput.validate_target_url(value)

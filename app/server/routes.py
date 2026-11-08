@@ -71,8 +71,9 @@ from app.runs.exceptions import (
     RunNotWaitingForInputError,
     SensitiveInputNotPendingError,
 )
+from app.runs.proof import ProofFrameInfo
 from app.runs.repository import RunRepository
-from app.runs.schemas import ReproductionInput, RunEvent, RunRecord
+from app.runs.schemas import ReproductionInput, RerunRequest, RunEvent, RunRecord
 from app.runs.service import RunManager
 from app.server.constants import (
     CONTROL_CLOSE_RUN_NOT_FOUND,
@@ -356,6 +357,22 @@ async def get_annotations(run_id: UUID, user: CurrentUser) -> list[AnnotationTra
     return await run_in_threadpool(run_manager.get_annotation_tracks, run_id, user.id)
 
 
+@app.get("/api/runs/{run_id}/proof-frame", response_model=ProofFrameInfo)
+async def get_proof_frame_info(run_id: UUID, user: CurrentUser) -> ProofFrameInfo:
+    info = await run_in_threadpool(run_manager.get_proof_frame_info, run_id, user.id)
+    info.image_url = str(app.url_path_for("get_proof_frame", run_id=run_id))
+    return info
+
+
+@app.get("/api/runs/{run_id}/proof-frame.jpg")
+async def get_proof_frame(run_id: UUID, user: CurrentUser) -> Response:
+    try:
+        image = await run_in_threadpool(run_manager.get_proof_frame, run_id, user.id)
+    except ExportFailedError as exception:
+        raise HTTPException(status_code=503, detail=str(exception)) from exception
+    return Response(content=image, media_type="image/jpeg", headers=NO_CACHE_HEADERS)
+
+
 @app.post("/api/runs/{run_id}/recordings/{number}/annotated-export")
 async def prepare_annotated_export(run_id: UUID, number: int, user: CurrentUser):
     try:
@@ -542,8 +559,8 @@ async def decline_sensitive_input(run_id: UUID, user: CurrentUser) -> RunRespons
     response_model=RunResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def rerun_run(run_id: UUID, user: CurrentUser) -> RunResponse:
-    run = await run_manager.rerun_run(run_id, user.id)
+async def rerun_run(run_id: UUID, user: CurrentUser, request: RerunRequest | None = None) -> RunResponse:
+    run = await run_manager.rerun_run(run_id, user.id, request.target_url if request else None)
     return _build_run_response(run)
 
 

@@ -108,7 +108,10 @@ class RunEvidenceStore:
         for name in ("uploads", "evidence"):
             if (source_directory / name).is_dir():
                 shutil.copytree(source_directory / name, self.run_directory(destination) / name)
-        destination.bug_report = source.bug_report.model_copy(deep=True)
+        # The destination may target another environment; copy only media names.
+        assert destination.bug_report is not None
+        destination.bug_report.screenshot_names = list(source.bug_report.screenshot_names)
+        destination.bug_report.video_name = source.bug_report.video_name
         destination.repro_brief = source.repro_brief
         destination.evidence_frames = []
         for frame in source.evidence_frames:

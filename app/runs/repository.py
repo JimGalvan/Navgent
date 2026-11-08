@@ -1,5 +1,5 @@
 from pathlib import Path
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from sqlalchemy import inspect, select, text
 
@@ -24,6 +24,7 @@ class RunRepository:
         for column in inspect(self._engine).get_columns("runs"):
             columns.add(column["name"])
         additions = {
+            "bug_id": "CHAR(32)",
             "bug_report": "JSON",
             "repro_brief": "JSON",
             "evidence_frames": "JSON NOT NULL DEFAULT '[]'",
@@ -35,6 +36,12 @@ class RunRepository:
             for name, definition in additions.items():
                 if name not in columns:
                     connection.execute(text(f"ALTER TABLE runs ADD COLUMN {name} {definition}"))
+            # Preserve the old exact-task grouping when upgrading saved runs.
+            legacy = connection.execute(text("SELECT id, user_id, task FROM runs WHERE bug_id IS NULL")).all()
+            for run_id, user_id, task in legacy:
+                bug_id = uuid5(NAMESPACE_URL, f"reprobe:{user_id}:{task}")
+                connection.execute(text("UPDATE runs SET bug_id = :bug_id WHERE id = :id"),
+                                   {"bug_id": bug_id.hex, "id": run_id})
             if "reported_verdict" not in columns:
                 connection.execute(text("""
                     UPDATE runs SET reported_verdict = (
@@ -116,6 +123,7 @@ class RunRepository:
         return RunModel(
             id=run.id,
             thread_id=run.thread_id,
+            bug_id=run.bug_id,
             user_id=run.user_id,
             credential_ids=RunRepository._stringify_ids(run.credential_ids),
             task=run.task,

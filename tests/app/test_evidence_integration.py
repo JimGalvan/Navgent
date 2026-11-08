@@ -340,6 +340,38 @@ def test_rerun_reuses_persisted_brief_and_frames_after_reload(client, monkeypatc
     assert '"reused": true' in client.http.get(f"/api/runs/{rerun_id}/stream").text
 
 
+def test_environment_rerun_reuses_evidence_and_stable_bug_history(client):
+    run_id = create_run(client, files=[("screenshots", ("cart.png", image_bytes(), "image/png"))])
+    original = finish_run(client, run_id)
+    target = "https://fixed.example.test/cart"
+    client.model.error = AssertionError("Changing environments must reuse the saved evidence analysis")
+    response = client.http.post(f"/api/runs/{run_id}/rerun", json={"target_url": target})
+    assert response.status_code == 201, response.text
+    rerun = finish_run(client, response.json()["run"]["id"])
+    assert rerun["status"] == "succeeded"
+    assert rerun["bug_id"] == original["bug_id"]
+    assert rerun["bug_report"]["target_url"] == target
+    assert json.loads(rerun["task"])["url"] == target
+    assert client.sessions[-1].tasks[0].startswith(f"Reproduce this bug on {target}.")
+    assert rerun["repro_brief"] == original["repro_brief"]
+    assert rerun["evidence_frames"] == original["evidence_frames"]
+    assert len(client.model.messages) == 1
+    assert client.http.get(f"/api/runs/{run_id}").json()["run"]["bug_report"]["target_url"] == REPORT["target_url"]
+    assert client.http.get(f"/api/runs/{rerun['id']}/evidence/1.jpg").content == client.http.get(f"/api/runs/{run_id}/evidence/1.jpg").content
+    listed = client.http.get("/api/runs").json()["runs"]
+    assert {item["bug_id"] for item in listed} == {original["bug_id"]}
+    client.user.id = uuid4()
+    assert client.http.post(f"/api/runs/{run_id}/rerun", json={"target_url": target}).status_code == 404
+
+
+@pytest.mark.parametrize("target", ["file:///etc/passwd", "javascript:alert(1)", "https://", "not a URL"])
+def test_environment_rerun_rejects_invalid_target_before_starting(client, target):
+    run_id = create_run(client)
+    finish_run(client, run_id)
+    assert client.http.post(f"/api/runs/{run_id}/rerun", json={"target_url": target}).status_code == 422
+    assert len(client.sessions) == 1
+
+
 def test_reading_evidence_is_live_cancellable_and_counts_toward_capacity(client):
     client.model.release.clear()
     client.manager._max_concurrent_runs = 1
@@ -590,3 +622,21 @@ def test_rich_actions_round_trip_through_saved_events_and_stream(client):
             assert isinstance(event.payload["fields"], list)
     client.user.id = uuid4()
     assert client.http.get(f"/api/runs/{run_id}/events").status_code == 404
+
+
+@pytest.mark.parametrize("status", ["ready_for_follow_up", "failed", "cancelled", "timed_out"])
+def test_run_list_exposes_saved_verdict_without_leaking_other_accounts(client, status):
+    client.scenario.status = status
+    client.scenario.events = [ReproductionVerdictEvent("reproduced", "$30", "$42", 2, "The total stayed at $42.")]
+    run_id = create_run(client)
+    run = finish_run(client, run_id)
+    response = client.http.get("/api/runs")
+    assert response.status_code == 200
+    summaries = response.json()["runs"]
+    assert len(summaries) == 1
+    summary = summaries[0]
+    assert summary["id"] == run_id
+    assert summary["verdict"] == run["verdict"]
+    assert "recording_metadata" not in summary
+    client.user.id = uuid4()
+    assert client.http.get("/api/runs").json()["runs"] == []

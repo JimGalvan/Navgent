@@ -12,6 +12,7 @@ class RunModel(Base):
     __tablename__ = "runs"
 
     thread_id: Mapped[UUID]
+    bug_id: Mapped[UUID]
     user_id: Mapped[UUID | None] = mapped_column(index=True)
     credential_ids: Mapped[list[str]] = mapped_column(JSON)
     task: Mapped[str]
