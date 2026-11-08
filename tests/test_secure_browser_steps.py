@@ -47,6 +47,9 @@ class ObservedBrowser:
     async def click(self, element_index):
         self.clicks.append(element_index)
 
+    async def get_form_values(self):
+        return ["Email: standard"]
+
 
 class SecureBrowserStepTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -56,6 +59,7 @@ class SecureBrowserStepTests(unittest.TestCase):
         credential_id = uuid4()
         plan = StepPlan.model_validate(
             {
+                "reason": "Test reason.",
                 "steps": [
                     {
                         "action": "fill_credential",
@@ -83,6 +87,7 @@ class SecureBrowserStepTests(unittest.TestCase):
     def test_a_code_step_may_name_the_control_that_sends_it(self) -> None:
         plan = StepPlan.model_validate(
             {
+                "reason": "Test reason.",
                 "steps": [
                     {
                         "action": "request_mfa_code",
@@ -100,6 +105,7 @@ class SecureBrowserStepTests(unittest.TestCase):
     def test_a_code_step_cannot_submit_through_an_unobserved_element(self) -> None:
         plan = StepPlan.model_validate(
             {
+                "reason": "Test reason.",
                 "steps": [
                     {
                         "action": "request_mfa_code",
@@ -119,6 +125,7 @@ class SecureBrowserStepTests(unittest.TestCase):
     def test_a_code_step_without_a_named_control_still_validates(self) -> None:
         plan = StepPlan.model_validate(
             {
+                "reason": "Test reason.",
                 "steps": [
                     {
                         "action": "request_mfa_code",
@@ -135,6 +142,7 @@ class SecureBrowserStepTests(unittest.TestCase):
     def test_credential_password_target_must_be_a_password_input(self) -> None:
         plan = StepPlan.model_validate(
             {
+                "reason": "Test reason.",
                 "steps": [
                     {
                         "action": "fill_credential",
@@ -153,6 +161,7 @@ class SecureBrowserStepTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             StepPlan.model_validate(
                 {
+                    "reason": "Test reason.",
                     "steps": [
                         {
                             "action": "request_mfa_code",
@@ -166,6 +175,7 @@ class SecureBrowserStepTests(unittest.TestCase):
 
         plan = StepPlan.model_validate(
             {
+                "reason": "Test reason.",
                 "steps": [
                     {
                         "action": "request_mfa_code",
@@ -190,7 +200,8 @@ class StepPlanSchemaTests(unittest.TestCase):
             self.assertNotIn(unsupported, serialized)
         self.assertEqual(json.dumps(original), before)
         self.assertFalse(schema["additionalProperties"])
-        self.assertEqual(schema["required"], ["steps"])
+        self.assertEqual(schema["required"], ["steps", "reason", "brief_step"])
+        self.assertIn({"type": "null"}, schema["properties"]["brief_step"]["anyOf"])
         actions = []
         for branch in schema["properties"]["steps"]["items"]["anyOf"]:
             actions.append(branch["properties"]["action"]["const"])
@@ -199,7 +210,7 @@ class StepPlanSchemaTests(unittest.TestCase):
             if branch["properties"]["action"]["const"] == "request_mfa_code":
                 self.assertIn({"type": "null"}, branch["properties"]["submit_element_index"]["anyOf"])
         self.assertEqual(sorted(actions), [
-            "click", "fill", "fill_credential", "press", "request_mfa_code", "select",
+            "click", "fill", "fill_credential", "press", "request_mfa_code", "select", "type",
         ])
 
     def test_runtime_is_not_exposed_in_any_browser_tool_schema(self):
@@ -207,7 +218,7 @@ class StepPlanSchemaTests(unittest.TestCase):
             schema = convert_to_openai_tool(browser_tool, strict=True)["function"]["parameters"]
             self.assertNotIn("runtime", schema["properties"])
             if browser_tool.name == "execute_steps":
-                self.assertEqual(list(schema["properties"]), ["steps"])
+                self.assertEqual(list(schema["properties"]), ["steps", "reason", "brief_step"])
                 self.assertIn("anyOf", schema["properties"]["steps"]["items"])
 
 
@@ -238,7 +249,7 @@ class BrowserToolTests(unittest.IsolatedAsyncioTestCase):
         ]
         for steps in invalid_plans:
             with self.subTest(steps=steps):
-                result = json.loads(await self.tools["execute_steps"].coroutine(steps))
+                result = json.loads(await self.tools["execute_steps"].coroutine(steps, "Test reason."))
                 self.assertEqual(result["kind"], "validation_error")
                 self.assertEqual(result["completed"], [])
         self.assertEqual(self.browser.fills, [])
@@ -321,7 +332,7 @@ class BrowserToolTests(unittest.IsolatedAsyncioTestCase):
     async def test_select_and_press_use_browser_values_and_publish_action_events(self):
         self.browser.select = AsyncMock()
         self.browser.press = AsyncMock()
-        result = json.loads(await self.tools["execute_steps"].coroutine([
+        result = json.loads(await self.tools["execute_steps"].coroutine(reason="Test reason.", steps=[
             {"action": "select", "element_index": 1, "value": "standard"},
             {"action": "press", "element_index": 1, "value": "Enter"},
         ]))
@@ -331,15 +342,24 @@ class BrowserToolTests(unittest.IsolatedAsyncioTestCase):
         self.browser.select.assert_awaited_once_with(1, "standard")
         self.browser.press.assert_awaited_once_with(1, "Enter")
         self.assertEqual(self.events, [
-            {"event_type": "browser.action.started", "payload": {"action": "select", "target": "Email"}},
-            {"event_type": "browser.action.completed", "payload": {"action": "select", "target": "Email"}},
-            {"event_type": "browser.action.started", "payload": {"action": "press", "target": "Email"}},
-            {"event_type": "browser.action.completed", "payload": {"action": "press", "target": "Email"}},
+            {"event_type": "browser.action.started", "payload": {
+                "action": "select", "target": "Email", "value": "standard", "reason": "Test reason.", "brief_step": None,
+            }},
+            {"event_type": "browser.action.completed", "payload": {
+                "action": "select", "target": "Email", "value": "standard", "reason": "Test reason.", "brief_step": None,
+                "fields": ["Email: standard"],
+            }},
+            {"event_type": "browser.action.started", "payload": {
+                "action": "press", "target": "Email", "value": "Enter", "reason": "Test reason.", "brief_step": None,
+            }},
+            {"event_type": "browser.action.completed", "payload": {
+                "action": "press", "target": "Email", "value": "Enter", "reason": "Test reason.", "brief_step": None,
+            }},
         ])
 
     async def test_failed_action_preserves_completed_steps_and_publishes_failure(self):
         self.browser.click = AsyncMock(side_effect=RuntimeError("Page changed"))
-        result = json.loads(await self.tools["execute_steps"].coroutine([
+        result = json.loads(await self.tools["execute_steps"].coroutine(reason="Test reason.", steps=[
             {"action": "fill", "element_index": 1, "value": "Ada"},
             {"action": "click", "element_index": 4},
         ]))
@@ -352,12 +372,15 @@ class BrowserToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.browser.fills, [(1, "Ada")])
         self.assertEqual(self.events[-1], {
             "event_type": "browser.action.failed",
-            "payload": {"action": "click", "target": "Sign in", "error": "Page changed"},
+            "payload": {
+                "action": "click", "target": "Sign in", "value": "", "reason": "Test reason.", "brief_step": None,
+                "error": "Page changed",
+            },
         })
 
     async def test_unsuccessful_mfa_resume_clears_request_and_reports_failure(self):
         with patch("navgent.browser_agent.tools.interrupt", return_value={"entered": False}):
-            result = json.loads(await self.tools["execute_steps"].coroutine([{
+            result = json.loads(await self.tools["execute_steps"].coroutine(reason="Test reason.", steps=[{
                 "action": "request_mfa_code", "element_index": 3,
                 "prompt": "Enter the code", "submit_element_index": 4,
             }]))
@@ -386,12 +409,12 @@ class BrowserToolTests(unittest.IsolatedAsyncioTestCase):
 
         with patch("navgent.browser_agent.tools.interrupt", side_effect=pause):
             with self.assertRaises(GraphInterrupt) as raised:
-                await self.tools["execute_steps"].coroutine(steps)
+                await self.tools["execute_steps"].coroutine(steps, "Test reason.")
         request = self.sensitive_inputs.pending
         self.assertEqual(request.submit_element_index, 4)
         self.assertEqual(raised.exception.args[0][0].value, {"kind": "mfa_code", "request_id": str(request.id)})
         with patch("navgent.browser_agent.tools.interrupt", return_value={"entered": True}):
-            result = json.loads(await self.tools["execute_steps"].coroutine(steps))
+            result = json.loads(await self.tools["execute_steps"].coroutine(steps, "Test reason."))
         self.assertTrue(result["ok"])
         self.assertIsNone(self.sensitive_inputs.pending)
         self.assertEqual(self.browser.fills, [])
@@ -403,7 +426,7 @@ class BrowserToolTests(unittest.IsolatedAsyncioTestCase):
         graph.set_finish_point("tools")
         agent = graph.compile(checkpointer=InMemorySaver())
         result = await agent.ainvoke({"messages": [AIMessage("", tool_calls=[{
-            "id": str(uuid4()), "name": "execute_steps", "args": {"steps": [
+            "id": str(uuid4()), "name": "execute_steps", "args": {"reason": "Test reason.", "brief_step": None, "steps": [
                 {"action": "fill", "element_index": 1, "value": "Ada"},
                 {"action": "click", "element_index": 4},
             ]},
@@ -420,7 +443,7 @@ class BrowserToolTests(unittest.IsolatedAsyncioTestCase):
         agent = graph.compile(checkpointer=InMemorySaver())
         config = {"configurable": {"thread_id": str(uuid4())}}
         paused = await agent.ainvoke({"messages": [AIMessage("", tool_calls=[{
-            "id": str(uuid4()), "name": "execute_steps", "args": {"steps": [{
+            "id": str(uuid4()), "name": "execute_steps", "args": {"reason": "Test reason.", "brief_step": None, "steps": [{
                 "action": "request_mfa_code", "element_index": 3,
                 "prompt": "Enter the code", "submit_element_index": 4,
             }]},

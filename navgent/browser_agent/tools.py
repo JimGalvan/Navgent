@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 
 from langchain_core.tools import BaseTool, tool
 from langgraph.errors import GraphInterrupt
@@ -21,6 +22,9 @@ from navgent.browser_agent.steps import (
     PressStep,
     SelectStep,
     StepPlan,
+    TypeStep,
+    changes_fields,
+    check_brief_order,
     step_event_payload,
     step_reference,
     validate_plan,
@@ -34,6 +38,8 @@ from navgent.shared.verification import describe_entered_code, explain_missing_c
 
 STEP_PLAN_SCHEMA = SchemaUtils.inline_references(StepPlan.model_json_schema())
 
+logger = logging.getLogger(__name__)
+
 
 def build_browser_tools(
         browser: BrowserSession,
@@ -42,6 +48,7 @@ def build_browser_tools(
 ) -> list[BaseTool]:
     sensitive_inputs = sensitive_inputs or SensitiveInputChannel()
     browser_lock = asyncio.Lock()
+    last_brief_step = 0
 
     @tool
     async def navigate_and_observe(url: str) -> str:
@@ -74,11 +81,16 @@ def build_browser_tools(
     async def report_verdict(
             verdict: Verdict, expected: str, observed: str, reason: str, step_number: int | None = None,
     ) -> str:
-        """Report whether the bug reproduced. Call once, after checking the assertion, while the value is on screen."""
+        """Report whether the bug reproduced. Call once, after checking the assertion, while the value is on screen.
+
+        `observed` quotes page text, or a form field as `Label: value` with `(empty)` for a blank field.
+        Separate several quotes with `; `, such as `First Name: r; Last Name: (empty)`.
+        """
         if verdict != "inconclusive":
             async with browser_lock:
                 page_text = await browser.get_page_text()
-            problem = check_observed(observed, page_text)
+                form_values = await browser.get_form_values()
+            problem = check_observed(observed, page_text + "\n" + "\n".join(form_values))
             if problem:
                 return problem
         publish_custom_event("reproduction.verdict", {
@@ -133,11 +145,13 @@ def build_browser_tools(
         return json.dumps(described)
 
     @tool(args_schema=STEP_PLAN_SCHEMA)
-    async def execute_steps(steps: list) -> str:
+    async def execute_steps(steps: list, reason: str = "", brief_step: int | None = None) -> str:
         """Validate and execute browser steps, including credential and MFA steps."""
+        nonlocal last_brief_step
         async with browser_lock:
             try:
-                plan = StepPlan.model_validate({"steps": steps})
+                plan = StepPlan.model_validate({"steps": steps, "reason": reason, "brief_step": brief_step})
+                check_brief_order(plan.brief_step, last_brief_step)
                 validate_plan(browser, plan.steps)
             except (ValidationError, ValueError) as exception:
                 return json.dumps(
@@ -150,12 +164,14 @@ def build_browser_tools(
                     }
                 )
 
+            if plan.brief_step is not None:
+                last_brief_step = plan.brief_step
             previous_url = browser.page.url
             completed = []
             notes = []
             for step in plan.steps:
                 reference = step_reference(step)
-                event_payload = step_event_payload(browser, step)
+                event_payload = step_event_payload(browser, step, plan)
                 publish_custom_event("browser.action.started", event_payload)
                 try:
                     note = await run_step(step)
@@ -177,7 +193,10 @@ def build_browser_tools(
                 if note is not None:
                     notes.append(note)
                 completed.append(reference)
-                publish_custom_event("browser.action.completed", event_payload)
+                completed_payload = dict(event_payload)
+                if changes_fields(step):
+                    completed_payload["fields"] = await read_form_values()
+                publish_custom_event("browser.action.completed", completed_payload)
                 await asyncio.sleep(ACTION_DELAY_SECONDS)
 
             current_url = await browser.wait_for_page_to_settle()
@@ -194,11 +213,20 @@ def build_browser_tools(
                 }
             )
 
+    async def read_form_values() -> list[str]:
+        try:
+            return await browser.get_form_values()
+        except Exception:
+            logger.warning("Could not read form values after a step", exc_info=True)
+            return []
+
     async def run_step(step: BrowserStep) -> str | None:
         if isinstance(step, ClickStep):
             await browser.click(step.element_index)
         elif isinstance(step, FillStep):
             await browser.fill(step.element_index, step.value)
+        elif isinstance(step, TypeStep):
+            await browser.type_text(step.element_index, step.value)
         elif isinstance(step, SelectStep):
             await browser.select(step.element_index, step.value)
         elif isinstance(step, PressStep):

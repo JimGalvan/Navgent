@@ -22,6 +22,12 @@ class FillStep(StrictStep):
     value: str
 
 
+class TypeStep(StrictStep):
+    action: Literal["type"]
+    element_index: int = Field(ge=0)
+    value: str
+
+
 class SelectStep(StrictStep):
     action: Literal["select"]
     element_index: int = Field(ge=0)
@@ -49,13 +55,26 @@ class MfaCodeStep(StrictStep):
 
 
 BrowserStep = Annotated[
-    ClickStep | FillStep | SelectStep | PressStep | CredentialFillStep | MfaCodeStep,
+    ClickStep | FillStep | TypeStep | SelectStep | PressStep | CredentialFillStep | MfaCodeStep,
     Field(discriminator="action"),
 ]
 
 
 class StepPlan(BaseModel):
     steps: list[BrowserStep] = Field(min_length=1, max_length=10)
+    reason: str = Field(
+        min_length=1, max_length=300, description="One short sentence on why these actions run now.",
+    )
+    brief_step: int | None = Field(
+        default=None, ge=1, description="When reproducing a bug, the number of the <steps> item these actions carry out.",
+    )
+
+
+def check_brief_order(brief_step: int | None, last_brief_step: int) -> None:
+    if brief_step is not None and brief_step < last_brief_step:
+        raise ValueError(
+            f"brief step {brief_step} comes after step {last_brief_step}; run the brief steps in order"
+        )
 
 
 def require_fillable_element(
@@ -105,7 +124,7 @@ def validate_plan(browser: BrowserSession, steps: list[BrowserStep]) -> None:
             raise ValueError(
                 f"element [{step.element_index}] is not in the latest observation"
             )
-        if isinstance(step, FillStep):
+        if isinstance(step, (FillStep, TypeStep)):
             require_fillable_element(browser, step.element_index)
         if isinstance(step, MfaCodeStep):
             require_fillable_element(browser, step.element_index)
@@ -126,5 +145,24 @@ def step_reference(step: BrowserStep) -> str:
     return f"{step.action}[{step.element_index}]"
 
 
-def step_event_payload(browser: BrowserSession, step: BrowserStep) -> dict[str, Any]:
-    return {"action": step.action, "target": element_label(browser, step.element_index)}
+def step_event_payload(browser: BrowserSession, step: BrowserStep, plan: StepPlan) -> dict[str, Any]:
+    return {
+        "action": step.action,
+        "target": element_label(browser, step.element_index),
+        "value": step_value(browser, step),
+        "reason": plan.reason,
+        "brief_step": plan.brief_step,
+    }
+
+
+def step_value(browser: BrowserSession, step: BrowserStep) -> str:
+    if not isinstance(step, (FillStep, TypeStep, SelectStep, PressStep)):
+        return ""
+    element = browser.get_stored_element(step.element_index)
+    if element is not None and "type=password" in element.attrs.lower():
+        return ""
+    return step.value
+
+
+def changes_fields(step: BrowserStep) -> bool:
+    return isinstance(step, (FillStep, TypeStep, SelectStep))
