@@ -169,6 +169,9 @@ def test_live_replays_action_progress_fields_and_reconnects_without_regressing(s
     page.reload()
     expect(current).to_contain_text("Remove the bottle")
     expect(page.locator("#form-state")).to_contain_text("First Name: r")
+    expect(page.locator("#browser-screen")).to_be_visible()
+    expect(page.locator("#frame-strip img")).to_have_count(1)
+    capture(surface, "live-browser")
 
 
 @pytest.mark.parametrize("status", ["running", "succeeded"])
@@ -230,9 +233,7 @@ def test_media_only_submission_sends_all_selected_evidence(surface):
     page.locator("#start-run").click()
     expect(page.locator("#form-message")).to_contain_text("Add written steps")
     assert surface.state.uploads == []
-    page.locator("#tab-video").click()
     page.locator("#video-files").set_input_files({"name": "recording.webm", "mimeType": "video/webm", "buffer": b"video upload fixture"})
-    page.locator("#tab-shots").click()
     page.locator("#shot-files").set_input_files({"name": "cart.jpg", "mimeType": "image/jpeg", "buffer": evidence_image()})
     expect(page.locator("#media-note")).to_contain_text("1 screenshot and 1 recording")
     expect(page.locator("#form-message")).to_be_empty()
