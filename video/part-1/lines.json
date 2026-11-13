@@ -1,9 +1,0 @@
-[
-  {"id": "l1a", "text": "This meeting is booked at ten. It's also booked at one."},
-  {"id": "l1b", "text": "It's one meeting."},
-  {"id": "l2", "text": "Someone on QA filed this. You move a meeting to a new time, and its old slot stays booked."},
-  {"id": "l3", "text": "Checking that by hand means walking through all of this."},
-  {"id": "l4", "text": "And I'd do it twice. Once now, to find out if it's even still happening. And again after I fix it, to see if the fix actually worked."},
-  {"id": "l5", "text": "Reprobe does those checks for me. I give it the bug report and a link, it opens a browser, follows the steps, and tells me whether the bug's there, with a recording to show for it."},
-  {"id": "l6", "text": "RoomPilot is how everyone at Northstar books meeting rooms. If the calendar says a room's taken when it isn't, people just go book somewhere else. So... let's see if Reprobe can find it."}
-]

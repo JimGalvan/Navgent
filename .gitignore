@@ -15,15 +15,10 @@ dist/
 /logs/
 /docs/
 
-# Demo video media (keep footage, voice tracks and exports out of git)
+# Demo video project and media stay out of git
+/video/
 *.mp4
 *.webm
 *.mov
 *.mkv
 *.avi
-/video/**/*.mp3
-/video/**/*.wav
-/video/**/*.m4a
-/video/**/*.prproj
-/video/**/*.drp
-/video/footage/

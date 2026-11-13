@@ -1,9 +1,0 @@
-[
-  {"id": "p1", "text": "I'm pasting in exactly what QA wrote. Nothing about where the bug might be."},
-  {"id": "p2", "text": "The test login's already saved, encrypted, and it only shows up because the link matches."},
-  {"id": "p3", "text": "Before it touches the browser, it turns the ticket into a plan, and every step says where it came from."},
-  {"id": "p4", "text": "The browser it's using is brand new, and it gets thrown away when the run's over."},
-  {"id": "p7", "text": "The login stays encrypted on Reprobe's server, not in the sandbox. The AI only asks for it by name. Reprobe types it in, on this site only, and the AI never sees it."},
-  {"id": "p5", "text": "I'm not clicking any of this."},
-  {"id": "p6", "text": "It reads the times back after typing them, which is what I'd do too."}
-]
