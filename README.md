@@ -51,7 +51,7 @@ To see the sandbox block something, point a run at a site that loads third-party
 
 Both run in Vultr's Seattle region, next to the VM. A demo run uses about 120k input tokens (most of them cached) and about 600 output tokens, roughly $0.10 at list price.
 
-`navgent/shared/llm.py` maps a `vultr:<model>` setting to LangChain's `ChatOpenAI` with Vultr's base URL and key. It uses the Chat Completions API and a reasoning effort Vultr accepts (`low` for the agent, `minimal` for the fast model). `examples/vultr_smoke.py` checks a model in three steps: a two-tool agent loop, a structured brief from a screenshot, and the full SauceDemo reproduction.
+`navgent/shared/llm.py` maps a `vultr:<model>` setting to LangChain's `ChatOpenAI` with Vultr's base URL and key. It uses the Chat Completions API and a reasoning effort Vultr accepts (`low` for the agent, `minimal` for the fast model).
 
 ## Architecture
 
@@ -145,7 +145,6 @@ deploy/
   sandbox/sandboxctl.py  root-owned sandbox controller: setup, start, stop, reap
   host/                  bootstrap, sandbox installer, systemd units, sudoers, Caddyfile,
                          app deploy script, env push script
-examples/                run_task.py, analyze_evidence.py, vultr_smoke.py
 tests/                   agent and sandbox tests; app tests in tests/app and app/tests
 ```
 
@@ -167,15 +166,7 @@ REPROBE_FAST_MODEL=vultr:glm-5.3-flash
 REPROBE_EVIDENCE_MODEL=vultr:glm-5.3-flash
 ```
 
-Check the models, then reproduce the demo bug from the command line:
-
-```bash
-uv run python examples/vultr_smoke.py tools vultr:glm-5.3
-uv run python examples/vultr_smoke.py evidence vultr:glm-5.3-flash
-uv run python examples/vultr_smoke.py reproduce --strong vultr:glm-5.3 --fast vultr:glm-5.3-flash --runs 1
-```
-
-To run the web app locally, add the WorkOS settings from `app/.env.example` to the same `.env`, then:
+Add the WorkOS settings from `app/.env.example` to the same `.env`, then run the web app:
 
 ```bash
 uv venv app/.venv --python 3.12
@@ -185,14 +176,6 @@ app/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8787 --work
 ```
 
 With `REPROBE_SANDBOX` unset or `local`, Chromium runs on your machine instead of in a sandbox.
-
-To try the sandbox image without the VM (Docker, without gVisor or the firewall):
-
-```bash
-docker build -t reprobe-browser:1.64.1 deploy/sandbox
-docker run --rm -d --name sbx --read-only --tmpfs /tmp --tmpfs /home/pwuser:mode=1777 --cap-drop ALL -p 127.0.0.1:3000:3000 reprobe-browser:1.64.1
-uv run python examples/vultr_smoke.py reproduce --strong vultr:glm-5.3 --fast vultr:glm-5.3-flash --ws-endpoint ws://127.0.0.1:3000/
-```
 
 ## Deploy to Vultr
 
